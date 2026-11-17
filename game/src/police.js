@@ -53,13 +53,15 @@ export function updatePolice(game, dt) {
     pol.heat = Math.max(0, pol.heat - dt * (speed > 5 ? 0.4 : 2.2));
     pol.stars = Math.min(5, Math.floor(pol.heat / 20));
   }
-  // spawns
-  if (pol.stars >= 1 && pol.copCars.length < Math.min(CFG.COP_MAX_CARS, pol.stars)) spawnCopCar(game);
-  if (pol.stars >= 2 && pol.footCops.length < Math.min(CFG.COP_MAX_FOOT, pol.stars - 1)) spawnFootCop(game);
-  if (pol.stars >= 3 && !pol.heli) {
-    pol.heli = buildHeli();
-    pol.heli.position.set(px + 30, 55, pz - 30);
-    game.scene.add(pol.heli);
+  // spawns (off in deterministic ?shot= scenes — the scene places its own units)
+  if (!game.shotMode) {
+    if (pol.stars >= 1 && pol.copCars.length < Math.min(CFG.COP_MAX_CARS, pol.stars)) spawnCopCar(game);
+    if (pol.stars >= 2 && pol.footCops.length < Math.min(CFG.COP_MAX_FOOT, pol.stars - 1)) spawnFootCop(game);
+    if (pol.stars >= 3 && !pol.heli) {
+      pol.heli = buildHeli();
+      pol.heli.position.set(px + 30, 55, pz - 30);
+      game.scene.add(pol.heli);
+    }
   }
   if (pol.stars < 3 && pol.heli) { game.scene.remove(pol.heli); pol.heli = null; }
 

@@ -3,11 +3,11 @@
 // map: fullscreen city map · title: title screen over the beach at sunset.
 import { setNight } from './world.js';
 import { makeCar } from './car.js';
-import { buildPed, buildCopCar } from './entities.js';
+import { buildPed, buildCopCar, buildHeli } from './entities.js';
 import { startMission, say } from './missions.js';
 import { addHeat } from './police.js';
 import { fireShot } from './combat.js';
-import { openMap } from './hud.js';
+import { openMap, showTitle } from './hud.js';
 
 export function applyShot(game, name, seed) {
   game.shotMode = name;
@@ -35,30 +35,37 @@ export function applyShot(game, name, seed) {
       game.scene.add(mesh);
       game.police.copCars.push({ mesh, x: car.x + dx, z: car.z + dz, angle: Math.PI, speed: 40 });
     }
-    // helicopter overhead
+    // helicopter overhead (placed explicitly: updatePolice would hover it behind the camera)
     game.police.stars = 4;
+    if (!game.police.heli) {
+      game.police.heli = buildHeli();
+      game.scene.add(game.police.heli);
+    }
     game.state = 'playing';
   } else if (name === 'night') {
-    // Neon night shootout downtown: Jax on foot, firing at Rico's crew.
+    // Neon night shootout on the z=-400 road, facing east: Rico's crew stands
+    // in front of the CLUB SOLMAR neon sign (120, -360).
     setNight(game.world, 1);
     game.clock.hour = 21; game.clock.minute = 42;
     p.money = 9850;
-    p.x = 0; p.z = 60; p.angle = Math.PI;
+    p.x = 0; p.z = -400; p.angle = Math.PI / 2;
     p.mesh.position.set(p.x, 0, p.z);
     p.ammo = 23; p.reserve = 160; p.weapon = 'WASP SMG';
     startMission(game, 7); // Showdown
     game.mission.stage = 1;
     addHeat(game, 40);
     const defs = [
-      { x: -18, z: 20, hp: 100, rico: false },
-      { x: 14, z: 4, hp: 100, rico: false },
-      { x: -6, z: -18, hp: 220, rico: true },
+      { x: 60, z: -400, hp: 100, rico: false },
+      { x: 90, z: -392, hp: 100, rico: false },
+      { x: 118, z: -382, hp: 220, rico: true },
     ];
     for (const d of defs) {
       const mesh = buildPed(d.rico ? 0xe05a5a : 0x2f8f7a);
       mesh.position.set(d.x, 0, d.z);
       game.scene.add(mesh);
-      game.enemies.push({ mesh, x: d.x, z: d.z, hp: d.hp, dead: false, rico: d.rico, fireT: 0.5 });
+      // invulnerable during the scene: tracers + return fire show, nobody dies,
+      // so the Showdown can never complete into the victory screen
+      game.enemies.push({ mesh, x: d.x, z: d.z, hp: d.hp, dead: false, rico: d.rico, fireT: 0.5, invuln: true });
     }
     say(game, 'Rico', 'Jax Marlowe. You should have stayed away from my docks.', 6);
     game.state = 'playing';
@@ -74,6 +81,9 @@ export function applyShot(game, name, seed) {
     setNight(game.world, 0);
     game.clock.hour = 18; game.clock.minute = 40;
     game.state = 'title';
+    // full title overlay: menu (incl. Continue) + HOW TO PLAY panel + character row
+    showTitle(game, { day: 3, money: 31420, done: 4 });
+    document.getElementById('howto-panel').classList.remove('hidden');
   }
   game.shotApplied = true;
 }
@@ -102,6 +112,9 @@ export function updateShot(game, dt) {
       c.mesh.rotation.y = Math.PI;
     }
     game.mission.timer = Math.max(1, game.mission.timer - dt);
+    // keep the helicopter ahead-left in frame (updatePolice would hover it behind the camera)
+    const h = game.police.heli;
+    if (h) h.position.set(car.x - 55, 34, car.z + 26);
   } else if (game.shotMode === 'night' && game.state === 'playing') {
     // looped fire at the nearest living enemy
     game.combat.fireT -= dt;

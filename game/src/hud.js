@@ -128,6 +128,12 @@ export function showDistrictBanner(d) {
   setTimeout(() => b.classList.add('hidden'), 2600);
 }
 
+// district labels, clamped so edge districts (e.g. SUNSET BEACH) are never cut off
+function labelClamped(g, text, x, y, S) {
+  const w = g.measureText(text).width;
+  g.fillText(text, Math.max(w / 2 + 4, Math.min(S - w / 2 - 4, x)), y);
+}
+
 // ---------- minimap (bright, round, legible) ----------
 function drawMinimap(game) {
   const cv = $('minimap');
@@ -153,7 +159,7 @@ function drawMinimap(game) {
   for (const x of [-1200, -800, -400, 0, 400, 800, 1200]) { g.beginPath(); g.moveTo(sx(x), 0); g.lineTo(sx(x), S); g.stroke(); }
   // district labels
   g.fillStyle = '#5a4632'; g.font = 'bold 9px Arial'; g.textAlign = 'center';
-  for (const d of DISTRICTS) g.fillText(d.name, sx((d.x0 + d.x1) / 2), sz((d.z0 + d.z1) / 2));
+  for (const d of DISTRICTS) labelClamped(g, d.name, sx((d.x0 + d.x1) / 2), sz((d.z0 + d.z1) / 2), S);
   // route to objective
   const p = game.player;
   const px = p.inCar ? p.inCar.x : p.x, pz = p.inCar ? p.inCar.z : p.z;
@@ -191,12 +197,13 @@ function drawMinimap(game) {
 // ---------- fullscreen city map (Tab) ----------
 export function openMap(game) {
   mapOpen = true;
+  $('hud').classList.add('hidden');
   $('map-screen').classList.remove('hidden');
   renderStoryList(game);
   renderMapStats(game);
   drawBigMap(game);
 }
-export function closeMap() { mapOpen = false; $('map-screen').classList.add('hidden'); }
+export function closeMap() { mapOpen = false; $('map-screen').classList.add('hidden'); $('hud').classList.remove('hidden'); }
 export function isMapOpen() { return mapOpen; }
 
 function renderStoryList(game) {
@@ -241,7 +248,7 @@ function drawBigMap(game) {
   for (const z of [-800, -400, 0, 400, 800]) { g.beginPath(); g.moveTo(0, sz(z)); g.lineTo(S, sz(z)); g.stroke(); }
   for (const x of [-1200, -800, -400, 0, 400, 800, 1200]) { g.beginPath(); g.moveTo(sx(x), 0); g.lineTo(sx(x), S); g.stroke(); }
   g.fillStyle = '#3a2c1c'; g.font = 'bold 15px Arial'; g.textAlign = 'center';
-  for (const d of DISTRICTS) g.fillText(d.name, sx((d.x0 + d.x1) / 2), sz((d.z0 + d.z1) / 2));
+  for (const d of DISTRICTS) labelClamped(g, d.name, sx((d.x0 + d.x1) / 2), sz((d.z0 + d.z1) / 2), S);
   // route + markers
   const p = game.player;
   const px = p.inCar ? p.inCar.x : p.x, pz = p.inCar ? p.inCar.z : p.z;

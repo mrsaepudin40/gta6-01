@@ -131,9 +131,10 @@ function updateCamera(dt) {
     look = new THREE.Vector3(c.x + fx * 12, 1.2, c.z + fz * 12);
     camera.fov = lerp(camera.fov, 62 + clamp(Math.abs(c.speed) / 50, 0, 1) * 7, dt * 3);
   } else {
+    // on-foot camera pulled back: the 3.65-unit player model filled the frame at 5.5
     const fx = Math.sin(p.angle), fz = Math.cos(p.angle);
-    target = new THREE.Vector3(p.x - fx * 5.5, 2.4, p.z - fz * 5.5);
-    look = new THREE.Vector3(p.x + fx * 8, 1.6, p.z + fz * 8);
+    target = new THREE.Vector3(p.x - fx * 10.5, 3.2, p.z - fz * 10.5);
+    look = new THREE.Vector3(p.x + fx * 11, 1.8, p.z + fz * 11);
     camera.fov = lerp(camera.fov, 58, dt * 3);
     game.cameraYaw = p.angle + Math.PI;
   }
@@ -383,9 +384,14 @@ addEventListener('resize', () => {
 
 // shot mode (deterministic scenes for screenshots)
 if (shotParam) {
-  document.getElementById('hud').classList.remove('hidden');
-  hideTitle();
-  applyShot(game, shotParam, params.get('seed') || '');
+  if (shotParam === 'title') {
+    // title scene keeps the real title overlay (menu + how-to + characters)
+    applyShot(game, shotParam, params.get('seed') || '');
+  } else {
+    document.getElementById('hud').classList.remove('hidden');
+    hideTitle();
+    applyShot(game, shotParam, params.get('seed') || '');
+  }
 }
 
 window.__game = game;

@@ -37,8 +37,11 @@ export function fireShot(game, from, dir, opts = {}) {
   }
   if (hit) {
     end.set(hit.x, 2.2, hit.z);
-    hit.hp -= CFG.SHOT_DMG;
-    if (hit.hp <= 0) { hit.dead = true; hit.mesh.visible = false; }
+    // shot-scene enemies are invulnerable: tracers + flash still show, nobody dies
+    if (!hit.invuln) {
+      hit.hp -= CFG.SHOT_DMG;
+      if (hit.hp <= 0) { hit.dead = true; hit.mesh.visible = false; }
+    }
   }
   tracerLine(game, new THREE.Vector3(from.x, 2.4, from.z), end, opts.color ?? 0xffe066);
   if (!opts.silent) addHeat(game, 2);

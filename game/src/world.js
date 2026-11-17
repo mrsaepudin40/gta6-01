@@ -120,7 +120,8 @@ export function buildWorld(scene) {
   g.add(sea);
 
   // ---- roads: sidewalk base + shiny asphalt + markings + zebra ----
-  const roadMat = new THREE.MeshPhongMaterial({ color: PAL.asphalt, shininess: 90, specular: 0x666677 });
+  // matte asphalt: Phong specular painted a giant sun-glint wedge on the road
+  const roadMat = new THREE.MeshStandardMaterial({ color: PAL.asphalt, roughness: 0.95 });
   const walkMat = new THREE.MeshStandardMaterial({ color: PAL.sidewalk, roughness: 0.9 });
   const lineWhite = new THREE.MeshBasicMaterial({ color: 0xf5f2e8 });
   const lineYellow = new THREE.MeshBasicMaterial({ color: 0xf2c14e });

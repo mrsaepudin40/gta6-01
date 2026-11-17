@@ -24,7 +24,7 @@ export const CFG = {
 };
 
 export const PAL = {
-  asphalt: 0x33303a,
+  asphalt: 0x4b4753,
   grass: 0x7fae62,
   sand: 0xe9cd8f,
   sidewalk: 0xbfae90,
