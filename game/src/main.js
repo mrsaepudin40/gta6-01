@@ -7,8 +7,8 @@ import { audio } from './audio.js';
 import { buildWorld } from './world.js';
 import { makePlayer, updatePlayerOnFoot, nearestCar, enterCar, exitCar } from './player.js';
 import { initTraffic, updateTraffic } from './traffic.js';
-import { makePolice, updatePolice, addHeat, starsOf } from './police.js';
-import { makeCombat, tryShoot, tryPunch, updateCombat } from './combat.js';
+import { makePolice, updatePolice, updateHeli, addHeat, starsOf } from './police.js';
+import { makeCombat, tryShoot, tryPunch, updateCombat, updateEnemies } from './combat.js';
 import { newMissionState, startMission, updateMissions, updateMissionQueue, say } from './missions.js';
 import { makeGarage, nearGarage, buySelected, applyArmor } from './garage.js';
 import { readSave, writeSave } from './save.js';
@@ -23,19 +23,19 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(PAL.skyDay);
-scene.fog = new THREE.Fog(PAL.fogDay, 500, 3800);
+scene.fog = new THREE.Fog(PAL.fogDay, 900, 5200);
 
 const camera = new THREE.PerspectiveCamera(62, CFG.VIEW_W / CFG.VIEW_H, 0.1, 8000);
 
-const sun = new THREE.DirectionalLight(PAL.sun, 2.0);
+const sun = new THREE.DirectionalLight(PAL.sun, 2.7);
 sun.position.set(-1400, 500, -600);
 scene.add(sun);
-const hemi = new THREE.HemisphereLight(0xffd9a0, 0x5a4a3a, 0.85);
+const hemi = new THREE.HemisphereLight(0xffe2b0, 0x8a7a5a, 1.15);
 scene.add(hemi);
 // low sun disc on the western horizon
 const sunDisc = new THREE.Mesh(
   new THREE.CircleGeometry(120, 24),
-  new THREE.MeshBasicMaterial({ color: 0xffdf8a, fog: false })
+  new THREE.MeshBasicMaterial({ color: 0xfff3c0, fog: false })
 );
 sunDisc.position.set(-2600, 260, 400);
 sunDisc.lookAt(0, 260, 400);
@@ -47,10 +47,11 @@ const game = {
   world: null, player: null, traffic: null, police: null, combat: null,
   mission: newMissionState(),
   garage: makeGarage(),
+  enemies: [], nightGuards: null, completeShown: false,
   day: 1, clockMin: 17 * 60 + 40,
   radioIdx: 0, muted: false, bestWanted: 0,
   gunshotAt: null, gunshotT: 0,
-  night: false, shotMode: null, titleCam: null,
+  night: false, shotMode: null, titleCam: null, mapOpen: false, phoneOpen: false,
   camPos: new THREE.Vector3(620, 300, 980),
   camYaw: 0,
   addHeat: (n) => addHeat(game, n),
@@ -58,18 +59,23 @@ const game = {
 
 function setNight(on) {
   game.night = on;
+  // street lamps glow brighter at night so the city reads as lit
+  if (game.world?.lampBulbs) for (const b of game.world.lampBulbs) b.scale.setScalar(on ? 1.8 : 1);
+  // lit windows only read at night; dark glass reads by day
+  if (game.world?.windowsMesh) game.world.windowsMesh.visible = on;
+  if (game.world?.windowsDayMesh) game.world.windowsDayMesh.visible = !on;
   if (on) {
-    sun.intensity = 0.35; sun.color.setHex(0x8fa8ff);
-    hemi.intensity = 0.3;
+    sun.intensity = 0.5; sun.color.setHex(0x8fa8ff);
+    hemi.intensity = 0.45;
     scene.background.setHex(PAL.skyNight);
     scene.fog.color.setHex(PAL.fogNight);
     sunDisc.material.color.setHex(0xdde6ff);
   } else {
-    sun.intensity = 2.0; sun.color.setHex(PAL.sun);
-    hemi.intensity = 0.85;
+    sun.intensity = 2.7; sun.color.setHex(PAL.sun);
+    hemi.intensity = 1.15;
     scene.background.setHex(PAL.skyDay);
     scene.fog.color.setHex(PAL.fogDay);
-    sunDisc.material.color.setHex(0xffdf8a);
+    sunDisc.material.color.setHex(0xfff3c0);
   }
 }
 
@@ -83,6 +89,11 @@ function resetGame() {
   game.police.heat = 0;
   game.police.cars.forEach((c) => game.scene.remove(c.mesh));
   game.police.cars = [];
+  if (game.police.heli) { game.scene.remove(game.police.heli.mesh); game.police.heli = null; }
+  for (const e of game.enemies) if (e.mesh) game.scene.remove(e.mesh);
+  game.enemies = [];
+  if (game.nightGuards) { for (const g of game.nightGuards) game.scene.remove(g); game.nightGuards = null; }
+  game.completeShown = false;
   game.mission = newMissionState();
   game.day = 1; game.clockMin = 17 * 60 + 40;
   game.bestWanted = 0;
@@ -91,7 +102,7 @@ function resetGame() {
 
 // edge-triggered keys
 const edge = new Set();
-window.addEventListener('keydown', (e) => { if (!e.repeat) edge.add(e.code); audio.resume(); });
+window.addEventListener('keydown', (e) => { if (e.code === 'Tab') e.preventDefault(); if (!e.repeat) edge.add(e.code); audio.resume(); });
 window.addEventListener('mousedown', () => audio.resume());
 
 function init() {
@@ -136,6 +147,8 @@ function init() {
     hideOverlays();
     if (shot === 'start') showOverlay('title');
     if (shot === 'garage') { /* garage menu drawn by HUD */ }
+    if (shot === 'map') { game.mapOpen = true; showOverlay('citymap'); }
+    if (shot === 'phone') { game.phoneOpen = true; showOverlay('phone'); }
   } else {
     showOverlay('title');
   }
@@ -144,6 +157,9 @@ function init() {
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
   });
+  // automated-test hook (harmless in production): lets the mission test drive
+  // missions directly instead of only through synthetic input.
+  window.__solmar = { game, startMission };
   requestAnimationFrame(loop);
 }
 
@@ -215,6 +231,23 @@ function loop() {
   if (game.state === 'playing') {
     game.clockMin += dt * 0.5;
     if (game.clockMin >= 1440) { game.clockMin -= 1440; game.day += 1; }
+    // Tab: fullscreen city map + missions (pauses the action while open)
+    if (edge.has('Tab')) {
+      if (game.phoneOpen) { game.phoneOpen = false; hideOverlays(); }
+      else {
+        game.mapOpen = !game.mapOpen;
+        if (game.mapOpen) showOverlay('citymap');
+        else hideOverlays();
+      }
+    }
+    // Esc: phone — closes garage/map first, otherwise opens the phone
+    if (edge.has('Escape')) {
+      if (game.garage.open) game.garage.open = false;
+      else if (game.mapOpen) { game.mapOpen = false; hideOverlays(); }
+      else if (game.phoneOpen) { game.phoneOpen = false; hideOverlays(); }
+      else { game.phoneOpen = true; showOverlay('phone'); }
+    }
+    if (game.mapOpen || game.phoneOpen) { edge.clear(); updateCamera(dt); updateHud(game); renderer.render(scene, camera); return; }
     // garage menu navigation
     if (game.garage.open) {
       if (edge.has('ArrowUp')) game.garage.sel = (game.garage.sel + 2) % 3;
@@ -254,9 +287,11 @@ function loop() {
       }
       updateTraffic(game.traffic, dt, game.world, { x: p.inCar ? p.inCar.x : p.x, z: p.inCar ? p.inCar.z : p.z }, game.gunshotAt);
       updatePolice(game, dt);
+      updateHeli(game, dt);
       updateMissions(game, dt);
       updateMissionQueue(game, dt);
       updateCombat(game, dt);
+      updateEnemies(game, dt);
       if (game.gunshotT > 0) { game.gunshotT -= dt; if (game.gunshotT <= 0) game.gunshotAt = null; }
       if (p.hp <= 0) { game.state = 'wasted'; showOverlay('wasted'); audio.siren(false); }
     }
@@ -265,15 +300,31 @@ function loop() {
   } else if (game.state === 'paused') {
     if (edge.has('KeyP') || edge.has('Escape')) { game.state = 'playing'; hideOverlays(); }
   } else if (game.state === 'busted' || game.state === 'wasted' || game.state === 'complete') {
+    if (game.state === 'complete' && !game.completeShown) { game.completeShown = true; showOverlay('complete'); }
     if (edge.has('KeyR')) restart();
   } else if (game.state === 'title') {
     if (edge.has('Enter')) startGame();
+  }
+
+  // beacon pulse + night-guard scan sweep
+  if (game.nightGuards) {
+    for (const g of game.nightGuards) g.rotation.y += dt * 0.25;
   }
 
   // beacon pulse
   if (game.world?.beacon) {
     const s = 1 + Math.sin(performance.now() * 0.004) * 0.25;
     game.world.beacon.scale.set(s, 1, s);
+  }
+  // mission objective diamond bobs + spins above the target; ring pulses
+  if (game.world?.objectiveDiamond && game.world.objectiveDiamond.visible) {
+    const t = performance.now() * 0.002;
+    game.world.objectiveDiamond.position.y = 20 + Math.sin(t) * 2.5;
+    game.world.objectiveDiamond.rotation.y += dt * 1.5;
+  }
+  if (game.world?.objectiveRing && game.world.objectiveRing.visible) {
+    const s = 1 + Math.sin(performance.now() * 0.003) * 0.12;
+    game.world.objectiveRing.scale.set(s, s, 1);
   }
 
   updateCamera(dt);

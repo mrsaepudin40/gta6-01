@@ -13,7 +13,7 @@ export function initTraffic(scene, world) {
   const cars = [];
   const peds = [];
   // traffic cars: each loops a rectangle around one block
-  for (let i = 0; i < 14; i++) {
+  for (let i = 0; i < 24; i++) {
     const bx = rng.pick([-1200, -800, -400, 0, 400, 800]);
     const bz = rng.pick([-800, -400, 0, 400, 800]);
     const loop = [
@@ -39,13 +39,21 @@ export function initTraffic(scene, world) {
     parked.push({ x, z, heading: mesh.rotation.y, mesh, sport, kind: sport ? 'sport' : 'sedan', taken: false });
   }
   // pedestrians
-  for (let i = 0; i < 20; i++) {
+  for (let i = 0; i < 36; i++) {
     const x = rng.range(-1500, 1300), z = rng.range(-1100, 1100);
     if (isRoad(x, z)) continue;
     const mesh = makePedMesh(rng.pick(PAL.ped));
     mesh.position.set(x, 0, z);
     scene.add(mesh);
     peds.push({ x, z, heading: rng.range(0, Math.PI * 2), mesh, speed: rng.range(1.2, 2.2), fleeT: 0, tx: x, tz: z });
+  }
+  // beachgoers strolling the sand
+  for (let i = 0; i < 10; i++) {
+    const x = rng.range(1420, 1520), z = rng.range(-1000, 1000);
+    const mesh = makePedMesh(rng.pick(PAL.ped));
+    mesh.position.set(x, 0, z);
+    scene.add(mesh);
+    peds.push({ x, z, heading: rng.range(0, Math.PI * 2), mesh, speed: rng.range(0.8, 1.6), fleeT: 0, tx: x, tz: z });
   }
   return { cars, parked, peds };
 }

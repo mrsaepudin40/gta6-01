@@ -1,14 +1,14 @@
 // Wanted level, police cars, arrests (BUSTED).
 import * as THREE from 'three';
 import { CFG } from './config.js';
-import { makeCopCarMesh } from './entities.js';
+import { makeCopCarMesh, makeHeliMesh } from './entities.js';
 import { makeCarState, driveCar } from './car.js';
 import { angLerp, dist2d, clamp } from './random.js';
 import { nearestRoadCenter } from './world.js';
 import { audio } from './audio.js';
 
 export function makePolice(scene) {
-  return { heat: 0, cars: [], bustT: 0, scene };
+  return { heat: 0, cars: [], bustT: 0, scene, heli: null };
 }
 
 export function starsOf(heat) { return Math.min(5, Math.floor(heat / 20)); }
@@ -83,4 +83,38 @@ export function updatePolice(game, dt) {
   // siren while wanted
   audio.siren(stars > 0 && game.state === 'playing');
   if (game.state === 'playing') audio.updateSiren(dt);
+}
+
+// Police helicopter: appears at 3+ stars, hovers above the player with a spotlight.
+export function updateHeli(game, dt) {
+  const pol = game.police;
+  const stars = starsOf(pol.heat);
+  const p = game.player;
+  const px = p.inCar ? p.inCar.x : p.x;
+  const pz = p.inCar ? p.inCar.z : p.z;
+  if (stars >= 3 && !pol.heli) {
+    const mesh = makeHeliMesh();
+    pol.scene.add(mesh);
+    pol.heli = { mesh, x: px + 30, z: pz + 30 };
+  } else if (stars < 3 && pol.heli) {
+    pol.scene.remove(pol.heli.mesh);
+    pol.heli = null;
+  }
+  const h = pol.heli;
+  if (!h) return;
+  // Hover AHEAD of the player (not directly overhead) and low enough to stay
+  // inside the third-person camera frame — the chase shot must show it.
+  // Track FAST (dt*3): at SwiftShader frame rates a slow lerp lags ~28u
+  // behind a 30u/s car and the heli ends up overhead, out of frame.
+  const heading = p.inCar ? p.inCar.heading : p.heading;
+  const fx = Math.sin(heading), fz = Math.cos(heading);
+  const tx = px + fx * 45 - fz * 12;
+  const tz = pz + fz * 45 + fx * 12;
+  h.x += (tx - h.x) * Math.min(1, dt * 3);
+  h.z += (tz - h.z) * Math.min(1, dt * 3);
+  const y = 15 + Math.sin(performance.now() * 0.0012) * 1.2;
+  h.mesh.position.set(h.x, y, h.z);
+  h.mesh.rotation.y = Math.atan2(px - h.x, pz - h.z);
+  const rotor = h.mesh.userData.rotor;
+  if (rotor) rotor.rotation.y += dt * 22;
 }

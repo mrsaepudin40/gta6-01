@@ -30,33 +30,33 @@ function groundTexture(rng) {
   const X = (x) => (x + CFG.WORLD_W / 2) * sx;
   const Z = (z) => (z + CFG.WORLD_H / 2) * sz;
   // grass
-  g.fillStyle = '#7fae5a'; g.fillRect(0, 0, W, H);
+  g.fillStyle = '#95c468'; g.fillRect(0, 0, W, H);
   for (let i = 0; i < 900; i++) {
-    g.fillStyle = rng.chance(0.5) ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.05)';
+    g.fillStyle = rng.chance(0.5) ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.06)';
     g.fillRect(rng.range(0, W), rng.range(0, H), rng.range(6, 26), rng.range(6, 26));
   }
   // park block (south-west)
-  g.fillStyle = '#5d8a48'; g.fillRect(X(-1200) + 8, Z(400) + 8, CFG.BLOCK - 16, CFG.BLOCK - 16);
+  g.fillStyle = '#6fae56'; g.fillRect(X(-1200) + 8, Z(400) + 8, CFG.BLOCK - 16, CFG.BLOCK - 16);
   // beach sand strip
-  g.fillStyle = '#e9cf8f'; g.fillRect(X(CFG.BEACH_X), 0, W - X(CFG.BEACH_X), H);
-  g.fillStyle = '#dfc07a'; g.fillRect(X(CFG.BEACH_X), 0, 26, H);
+  g.fillStyle = '#f0d698'; g.fillRect(X(CFG.BEACH_X), 0, W - X(CFG.BEACH_X), H);
+  g.fillStyle = '#e2c37e'; g.fillRect(X(CFG.BEACH_X), 0, 26, H);
   // roads
   for (const rx of ROAD_XS) {
-    g.fillStyle = '#3d3d47'; g.fillRect(X(rx - CFG.ROAD_W / 2), 0, CFG.ROAD_W * sx, H);
+    g.fillStyle = '#55565f'; g.fillRect(X(rx - CFG.ROAD_W / 2), 0, CFG.ROAD_W * sx, H);
     g.fillStyle = '#b7b0a0';
     g.fillRect(X(rx - CFG.ROAD_W / 2), 0, 5, H);
     g.fillRect(X(rx + CFG.ROAD_W / 2) - 5, 0, 5, H);
   }
   for (const rz of ROAD_ZS) {
-    g.fillStyle = '#3d3d47'; g.fillRect(0, Z(rz - CFG.ROAD_W / 2), X(CFG.BEACH_X), CFG.ROAD_W * sz);
+    g.fillStyle = '#55565f'; g.fillRect(0, Z(rz - CFG.ROAD_W / 2), X(CFG.BEACH_X), CFG.ROAD_W * sz);
     g.fillStyle = '#b7b0a0';
     g.fillRect(0, Z(rz - CFG.ROAD_W / 2), X(CFG.BEACH_X), 5);
     g.fillRect(0, Z(rz + CFG.ROAD_W / 2) - 5, X(CFG.BEACH_X), 5);
   }
-  // lane dashes
+  // lane dashes — thin, so they read as dashes, not a solid band
   g.fillStyle = '#d9d9c9';
-  for (const rx of ROAD_XS) for (let z = -1200; z < 1200; z += 60) g.fillRect(X(rx) - 2, Z(z), 4, 26);
-  for (const rz of ROAD_ZS) for (let x = -1600; x < CFG.BEACH_X; x += 60) g.fillRect(X(x), Z(rz) - 2, 26, 4);
+  for (const rx of ROAD_XS) for (let z = -1200; z < 1200; z += 60) g.fillRect(X(rx) - 1, Z(z), 2, 14);
+  for (const rz of ROAD_ZS) for (let x = -1600; x < CFG.BEACH_X; x += 60) g.fillRect(X(x), Z(rz) - 1, 14, 2);
   const tex = new THREE.CanvasTexture(cv);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.anisotropy = 4;
@@ -128,33 +128,81 @@ export function buildWorld(scene) {
   bridgeRail.position.set(CFG.WATER_X + 130, 5.5, -1172);
   group.add(bridgeRail);
 
-  // buildings per block
+  // buildings per block — denser + taller skyline, materials shared by color
+  // so the extra meshes stay cheap to render.
   const boxGeo = new THREE.BoxGeometry(1, 1, 1);
+  const matCache = new Map();
+  const matFor = (color) => {
+    if (!matCache.has(color)) matCache.set(color, new THREE.MeshLambertMaterial({ color }));
+    return matCache.get(color);
+  };
+  const roofMat = new THREE.MeshLambertMaterial({ color: PAL.roof });
+  const windowSpots = []; // {x,y,z,ry} lit-window quads, shown only at night
   for (let bx = -1600; bx < 1600; bx += CFG.BLOCK) {
     for (let bz = -1200; bz < 1200; bz += CFG.BLOCK) {
       const cx = bx + CFG.BLOCK / 2, cz = bz + CFG.BLOCK / 2;
       if (cx > CFG.BEACH_X - 100) continue; // beach: no buildings
       if (bx === -1200 && bz === 400) continue; // park block
       if (Math.abs(cx - markers.garage.x) < 220 && Math.abs(cz - markers.garage.z) < 220) continue; // garage lot
-      const n = rng.int(1, 3);
+      const n = rng.int(2, 3);
       for (let i = 0; i < n; i++) {
         const w = rng.range(55, 120), d = rng.range(55, 120);
-        const h = rng.range(12, 68);
+        const h = rng.range(18, 95);
         const x = cx + rng.range(-90, 90), z = cz + rng.range(-90, 90);
         const color = rng.pick(PAL.buildings);
-        const mat = new THREE.MeshLambertMaterial({ color });
-        const b = new THREE.Mesh(boxGeo, mat);
+        const b = new THREE.Mesh(boxGeo, matFor(color));
         b.scale.set(w, h, d);
         b.position.set(x, h / 2, z);
         group.add(b);
-        const roof = new THREE.Mesh(boxGeo, new THREE.MeshLambertMaterial({ color: PAL.roof }));
+        const roof = new THREE.Mesh(boxGeo, roofMat);
         roof.scale.set(w + 2, 1.6, d + 2);
         roof.position.set(x, h + 0.8, z);
         group.add(roof);
         colliders.push({ minX: x - w / 2, maxX: x + w / 2, minZ: z - d / 2, maxZ: z + d / 2 });
         buildings.push({ x, z, w, d, h, color });
+        // lit windows on both long faces for taller buildings
+        if (h > 30 && windowSpots.length < 600) {
+          const rows = Math.min(6, Math.floor(h / 14));
+          const cols = Math.min(5, Math.floor(w / 20));
+          for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+              if (!rng.chance(0.6)) continue;
+              const wx = x - ((cols - 1) * 18) / 2 + c * 18;
+              const wy = 10 + r * 13;
+              windowSpots.push({ x: wx, y: wy, z: z + d / 2 + 0.4, ry: 0 });
+              windowSpots.push({ x: wx, y: wy, z: z - d / 2 - 0.4, ry: Math.PI });
+            }
+          }
+        }
       }
     }
+  }
+  // one instanced mesh for all lit windows — visible only at night
+  let windowsMesh = null;
+  let windowsDayMesh = null;
+  if (windowSpots.length > 0) {
+    const winGeo = new THREE.PlaneGeometry(4.5, 6);
+    const winMat = new THREE.MeshBasicMaterial({ color: 0xffe9a8 });
+    windowsMesh = new THREE.InstancedMesh(winGeo, winMat, windowSpots.length);
+    const dummy = new THREE.Object3D();
+    windowSpots.forEach((s, i) => {
+      dummy.position.set(s.x, s.y, s.z);
+      dummy.rotation.set(0, s.ry, 0);
+      dummy.updateMatrix();
+      windowsMesh.setMatrixAt(i, dummy.matrix);
+    });
+    windowsMesh.visible = false;
+    group.add(windowsMesh);
+    // same windows as pale sky-glass by day, so towers are not flat boxes
+    const dayMat = new THREE.MeshBasicMaterial({ color: 0x9fb8cc });
+    windowsDayMesh = new THREE.InstancedMesh(winGeo, dayMat, windowSpots.length);
+    windowSpots.forEach((s, i) => {
+      dummy.position.set(s.x, s.y, s.z);
+      dummy.rotation.set(0, s.ry, 0);
+      dummy.updateMatrix();
+      windowsDayMesh.setMatrixAt(i, dummy.matrix);
+    });
+    group.add(windowsDayMesh);
   }
 
   // Benny's Garage — distinct orange-roof building + sign + beacon
@@ -175,8 +223,8 @@ export function buildWorld(scene) {
 
   // palms along the beach + scattered
   const palmPositions = [];
-  for (let z = -1100; z <= 1100; z += 140) palmPositions.push([CFG.BEACH_X - 40 + rng.range(-15, 15), z]);
-  for (let i = 0; i < 26; i++) palmPositions.push([rng.range(-1500, 1300), rng.range(-1100, 1100)]);
+  for (let z = -1100; z <= 1100; z += 110) palmPositions.push([CFG.BEACH_X - 40 + rng.range(-15, 15), z]);
+  for (let i = 0; i < 40; i++) palmPositions.push([rng.range(-1500, 1300), rng.range(-1100, 1100)]);
   for (const [x, z] of palmPositions) {
     if (isRoad(x, z)) continue;
     const p = makePalm(rng);
@@ -188,6 +236,7 @@ export function buildWorld(scene) {
   // street lamps at intersections
   const lampMat = new THREE.MeshLambertMaterial({ color: 0x222222 });
   const bulbMat = new THREE.MeshBasicMaterial({ color: 0xffe9a8 });
+  const lampBulbs = [];
   for (const rx of ROAD_XS) for (const rz of ROAD_ZS) {
     if (rx > CFG.BEACH_X - 100) continue;
     if (rng.chance(0.35)) continue;
@@ -197,18 +246,119 @@ export function buildWorld(scene) {
     const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.9, 8, 6), bulbMat);
     bulb.position.set(rx + CFG.ROAD_W / 2 + 4, 11.4, rz + CFG.ROAD_W / 2 + 4);
     group.add(bulb);
+    lampBulbs.push(bulb);
   }
 
-  // mission marker beacon (yellow pillar, moved by missions.js)
+  // beach umbrellas — bright cones on poles, lined up on the sand
+  const umbrellaColors = [0xff5a5a, 0xffd23f, 0x3fa7d6, 0x7fb069, 0xff8c1a, 0xc77dff];
+  const poleGeo = new THREE.CylinderGeometry(0.25, 0.25, 7, 6);
+  const poleMat = new THREE.MeshLambertMaterial({ color: 0xf0e6d2 });
+  const canopyGeo = new THREE.ConeGeometry(7, 3, 8);
+  for (let i = 0; i < 16; i++) {
+    const ux = CFG.BEACH_X + 60 + rng.range(0, 90);
+    const uz = -1000 + i * 130 + rng.range(-20, 20);
+    const pole = new THREE.Mesh(poleGeo, poleMat);
+    pole.position.set(ux, 3.5, uz);
+    group.add(pole);
+    const canopy = new THREE.Mesh(canopyGeo, matFor(umbrellaColors[i % umbrellaColors.length]));
+    canopy.position.set(ux, 8.2, uz);
+    group.add(canopy);
+  }
+
+  // market stalls on the beach promenade — canopy + table + red/blue crates
+  const stallSpots = [[1350, -260], [1350, 180], [1350, 620]];
+  const stallCanopyGeo = new THREE.BoxGeometry(26, 1.2, 18);
+  const stallTableGeo = new THREE.BoxGeometry(22, 3, 12);
+  const stallTableMat = new THREE.MeshLambertMaterial({ color: 0x7a5230 });
+  const stallPoleGeo = new THREE.CylinderGeometry(0.4, 0.4, 9, 6);
+  const stallPoleMat = new THREE.MeshLambertMaterial({ color: 0xdddddd });
+  for (let s = 0; s < stallSpots.length; s++) {
+    const [sx, sz] = stallSpots[s];
+    const canopy = new THREE.Mesh(stallCanopyGeo, matFor(s % 2 === 0 ? 0xff5a5a : 0x3fa7d6));
+    canopy.position.set(sx, 9.5, sz);
+    group.add(canopy);
+    for (const [ox, oz] of [[-11, -7], [11, -7], [-11, 7], [11, 7]]) {
+      const p = new THREE.Mesh(stallPoleGeo, stallPoleMat);
+      p.position.set(sx + ox, 4.5, sz + oz);
+      group.add(p);
+    }
+    const table = new THREE.Mesh(stallTableGeo, stallTableMat);
+    table.position.set(sx, 2.2, sz);
+    group.add(table);
+    for (let c = 0; c < 4; c++) {
+      const crate = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), c % 2 === 0 ? new THREE.MeshLambertMaterial({ color: 0xd93a3a }) : new THREE.MeshLambertMaterial({ color: 0x2f6df6 }));
+      const cs = rng.range(2.2, 3);
+      crate.scale.set(cs, cs, cs);
+      crate.position.set(sx - 8 + c * 5.5, 3.7 + cs / 2, sz + rng.range(-2, 2));
+      group.add(crate);
+    }
+  }
+
+  // mountains on the far horizon — pale and hazy, like the reference
+  const mountainMat = new THREE.MeshLambertMaterial({ color: 0x9fb4c8 });
+  const mountainMat2 = new THREE.MeshLambertMaterial({ color: 0x8fa8bc });
+  const mountainSpots = [
+    [-3400, -1200, 340, 800], [-3200, 300, 420, 950], [-3400, 1500, 320, 750],
+    [-1600, -3200, 380, 900], [400, -3300, 320, 800], [2200, -3200, 360, 850],
+  ];
+  for (let i = 0; i < mountainSpots.length; i++) {
+    const [mx, mz, mh, mr] = mountainSpots[i];
+    const mtn = new THREE.Mesh(new THREE.ConeGeometry(mr, mh, 7), i % 2 === 0 ? mountainMat : mountainMat2);
+    mtn.position.set(mx, mh / 2 - 10, mz);
+    group.add(mtn);
+  }
+
+  // mid-ground props: bushes + crates fill the wide grass between blocks
+  const bushGeo = new THREE.SphereGeometry(1, 7, 5);
+  const bushMat = new THREE.MeshLambertMaterial({ color: 0x4a7a3a });
+  const crateGeo = new THREE.BoxGeometry(1, 1, 1);
+  const crateMat = new THREE.MeshLambertMaterial({ color: 0x9a7b4f });
+  for (let i = 0; i < 200; i++) {
+    const x = rng.range(-1500, 1300), z = rng.range(-1100, 1100);
+    if (isRoad(x, z)) continue;
+    if (Math.abs(x - markers.garage.x) < 220 && Math.abs(z - markers.garage.z) < 220) continue;
+    if (rng.chance(0.55)) {
+      const s = rng.range(1.5, 3.5);
+      const b = new THREE.Mesh(bushGeo, bushMat);
+      b.scale.set(s, s * 0.7, s);
+      b.position.set(x, s * 0.45, z);
+      group.add(b);
+    } else {
+      const s = rng.range(1.2, 2.4);
+      const c = new THREE.Mesh(crateGeo, crateMat);
+      c.scale.set(s, s, s);
+      c.position.set(x, s / 2, z);
+      c.rotation.y = rng.range(0, Math.PI);
+      group.add(c);
+      colliders.push({ minX: x - s / 2, maxX: x + s / 2, minZ: z - s / 2, maxZ: z + s / 2 });
+    }
+  }
+
+  // mission marker beacon (bright yellow pillar, moved by missions.js)
   const markerMesh = new THREE.Mesh(
-    new THREE.CylinderGeometry(3, 3, 90, 10, 1, true),
-    new THREE.MeshBasicMaterial({ color: PAL.marker, transparent: true, opacity: 0.35, side: THREE.DoubleSide, depthWrite: false })
+    new THREE.CylinderGeometry(4.5, 4.5, 120, 10, 1, true),
+    new THREE.MeshBasicMaterial({ color: PAL.marker, transparent: true, opacity: 0.5, side: THREE.DoubleSide, depthWrite: false })
   );
-  markerMesh.position.set(markers.riverside.x, 45, markers.riverside.z);
+  markerMesh.position.set(markers.riverside.x, 60, markers.riverside.z);
   group.add(markerMesh);
 
+  // objective ring on the ground + floating diamond above the target
+  const objectiveRing = new THREE.Mesh(
+    new THREE.RingGeometry(11, 16, 32),
+    new THREE.MeshBasicMaterial({ color: PAL.marker, transparent: true, opacity: 0.85, side: THREE.DoubleSide, depthWrite: false })
+  );
+  objectiveRing.rotation.x = -Math.PI / 2;
+  objectiveRing.position.set(markers.riverside.x, 0.6, markers.riverside.z);
+  group.add(objectiveRing);
+  const objectiveDiamond = new THREE.Mesh(
+    new THREE.OctahedronGeometry(6),
+    new THREE.MeshBasicMaterial({ color: 0xffd23f })
+  );
+  objectiveDiamond.position.set(markers.riverside.x, 20, markers.riverside.z);
+  group.add(objectiveDiamond);
+
   scene.add(group);
-  return { group, markers, colliders, buildings, beacon, markerMesh };
+  return { group, markers, colliders, buildings, beacon, markerMesh, objectiveRing, objectiveDiamond, lampBulbs, windowsMesh, windowsDayMesh, stalls: stallSpots };
 }
 
 export function clampToWorld(x, z) {

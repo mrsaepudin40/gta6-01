@@ -1,10 +1,17 @@
 // Eight story missions: objectives, dialogue, rewards, timers, result banners.
-// Round 1: full mission data + generic marker/stage flow; showdown combat lands in round 2.
 import { MISSIONS } from './config.js';
 import { audio } from './audio.js';
 import { addHeat } from './police.js';
 import { dist2d } from './random.js';
 import { writeSave } from './save.js';
+import { spawnShowdownCrew } from './combat.js';
+
+// Night Shift stash spots: beach, park, riverside.
+const STASHES = [
+  { x: 1200, z: 0 },
+  { x: -1000, z: 600 },
+  { x: -1200, z: 800 },
+];
 
 export function newMissionState() {
   return { idx: -1, stage: 0, timer: 0, marker: null, dialog: [], dialogT: 0, completed: false, started: false, done: 0, banner: null, bannerT: 0 };
@@ -26,6 +33,7 @@ export function missionObjective(game) {
   if (m.completed) return 'Solmar Bay is yours. Free roam — cause chaos, lose the law, have fun.';
   if (!m.started || m.idx < 0) return 'Press Enter to start your first job for Mara.';
   const def = MISSIONS[m.idx];
+  if (m.idx === 5) return `${def.name}: Collect stash ${Math.min(m.stage + 1, 3)}/3 — stay quiet, stay dark.`;
   return `${def.name}: ${def.briefing}`;
 }
 
@@ -37,11 +45,37 @@ function markerFor(game, idx, stage) {
     case 2: return { ...W.hideout };
     case 3: return stage === 0 ? { ...W.docks } : { ...W.beach };
     case 4: return { ...W.garage };
-    case 5: return { ...W.beach }; // stash 1 (round 2 adds 2 more)
+    case 5: return { ...STASHES[stage] };
     case 6: return { ...W.bridge };
     case 7: return { ...W.docks };
     default: return null;
   }
+}
+
+export function syncObjectiveMarker(game) {
+  const m = game.mission;
+  const w = game.world;
+  if (!w) return;
+  if (w.markerMesh && m.marker) {
+    w.markerMesh.position.set(m.marker.x, 60, m.marker.z);
+    w.markerMesh.visible = true;
+  }
+  if (w.objectiveRing && m.marker) {
+    w.objectiveRing.position.set(m.marker.x, 0.6, m.marker.z);
+    w.objectiveRing.visible = true;
+  }
+  if (w.objectiveDiamond && m.marker) {
+    w.objectiveDiamond.position.set(m.marker.x, 20, m.marker.z);
+    w.objectiveDiamond.visible = true;
+  }
+}
+
+function hideObjectiveMarker(game) {
+  const w = game.world;
+  if (!w) return;
+  if (w.markerMesh) w.markerMesh.visible = false;
+  if (w.objectiveRing) w.objectiveRing.visible = false;
+  if (w.objectiveDiamond) w.objectiveDiamond.visible = false;
 }
 
 export function startMission(game, idx) {
@@ -52,10 +86,7 @@ export function startMission(game, idx) {
   if (idx === 2) addHeat(game, 40);
   if (idx === 6) addHeat(game, 80);
   m.marker = markerFor(game, idx, 0);
-  if (game.world.markerMesh && m.marker) {
-    game.world.markerMesh.position.set(m.marker.x, 45, m.marker.z);
-    game.world.markerMesh.visible = true;
-  }
+  syncObjectiveMarker(game);
   for (const [who, text] of def.dialog) say(game, who, text, 3.2);
   say(game, 'Objective', def.briefing, 5);
 }
@@ -85,22 +116,41 @@ export function updateMissions(game, dt) {
       say(game, 'Mara', 'Package secured. The law is coming — get to the Safe House!', 3.5);
       audio.pickup();
     } else if (m.stage === 1 && at(m.marker, 55)) completeMission(game);
-  } else if (idx === 2 || idx === 3 || idx === 6) {
+  } else if (idx === 2 || idx === 6) {
     if (at(m.marker, 55)) completeMission(game);
+  } else if (idx === 3) {
+    // Cold Chain is two-stage: pick up at the docks, then run to Sunset Beach
+    if (m.stage === 0 && at(m.marker, 55)) {
+      m.stage = 1; m.marker = markerFor(game, 3, 1);
+      say(game, 'Mara', 'Cargo secured. Run it to Sunset Beach before the ice melts!', 3.5);
+      audio.pickup();
+    } else if (m.stage === 1 && at(m.marker, 55)) completeMission(game);
   } else if (idx === 4) {
     if (p.inCar && p.inCar.sport && at(m.marker, 55)) completeMission(game);
     else if (at(m.marker, 55) && !p.inCar) say(game, 'Benny', 'I need a sports car, Jax. Not those legs.', 2);
   } else if (idx === 5) {
-    if (at(m.marker, 55)) completeMission(game);
+    if (at(m.marker, 55)) {
+      audio.pickup();
+      const n = m.stage + 1;
+      if (n >= 3) completeMission(game);
+      else {
+        m.stage = n;
+        m.marker = markerFor(game, 5, m.stage);
+        say(game, 'Mara', `Stash ${n}/3 secured. ${3 - n} to go.`, 3);
+      }
+    }
   } else if (idx === 7) {
-    // showdown combat lands in round 2 — reaching the docks starts the fight banner
-    if (m.stage === 0 && at(m.marker, 90)) { m.stage = 1; say(game, 'Rico', 'Jax Marlowe. You should have stayed away from my docks.', 3.5); }
-    else if (m.stage === 1) completeMission(game); // round 1: arriving twice completes (combat in round 2)
+    // showdown: reaching the docks starts the fight; killing the whole crew ends it
+    if (m.stage === 0 && at(m.marker, 90)) {
+      m.stage = 1;
+      spawnShowdownCrew(game);
+      say(game, 'Rico', 'Jax Marlowe. You should have stayed away from my docks.', 3.5);
+      say(game, 'Mara', 'Take them all down — crew and Rico both.', 3.5);
+    } else if (m.stage === 1 && game.enemies.length > 0 && game.enemies.every((e) => e.dead)) {
+      completeMission(game);
+    }
   }
-  if (game.world.markerMesh && m.marker) {
-    game.world.markerMesh.position.set(m.marker.x, 45, m.marker.z);
-    game.world.markerMesh.visible = true;
-  }
+  if (game.world.markerMesh && m.marker) syncObjectiveMarker(game);
 }
 
 function completeMission(game) {
@@ -112,7 +162,7 @@ function completeMission(game) {
   m.bannerT = 3.5;
   say(game, 'Mara', `Job done. $${def.reward} is yours.`, 3.5);
   m.done += 1;
-  if (game.world.markerMesh) game.world.markerMesh.visible = false;
+  hideObjectiveMarker(game);
   game.police.heat = 0;
   const next = m.idx + 1;
   m.started = false;

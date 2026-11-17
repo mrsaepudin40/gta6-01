@@ -82,3 +82,27 @@ export function makePedMesh(color, opts = {}) {
   g.userData.legs = [legL, legR];
   return g;
 }
+
+export function makeHeliMesh() {
+  const g = new THREE.Group();
+  const body = box(2.6, 1.3, 5.2, PAL.copCar, 0, 0, 0);
+  g.add(body);
+  const nose = box(2.2, 1.0, 1.6, 0x1a2028, 0, -0.1, 2.8);
+  g.add(nose);
+  const tail = box(0.7, 0.7, 4.2, PAL.copCar, 0, 0.25, -4.4);
+  g.add(tail);
+  const fin = box(0.25, 1.6, 1.0, PAL.copCar, 0, 0.9, -6.2);
+  g.add(fin);
+  const mast = box(0.3, 0.6, 0.3, 0x141414, 0, 0.7, 0);
+  g.add(mast);
+  const rotor = box(11, 0.14, 0.7, 0x141414, 0, 1.0, 0);
+  g.add(rotor);
+  // spotlight beam: apex at the heli, base just at the ground below
+  // (heli hovers ~15u up — a 42u cone would stab through the ground)
+  const beamMat = new THREE.MeshBasicMaterial({ color: 0xfff2b0, transparent: true, opacity: 0.08, side: THREE.DoubleSide, depthWrite: false });
+  const beam = new THREE.Mesh(new THREE.ConeGeometry(5, 15, 16, 1, true), beamMat);
+  beam.position.set(0, -7.5, 0);
+  g.add(beam);
+  g.userData.rotor = rotor;
+  return g;
+}
