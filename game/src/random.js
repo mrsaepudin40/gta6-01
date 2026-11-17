@@ -1,4 +1,4 @@
-// Seeded RNG (mulberry32) + small helpers. Deterministic world + shot scenes.
+// Seeded RNG (mulberry32) + small helpers. Deterministic world layout.
 export function mulberry32(seed) {
   let a = seed >>> 0;
   return function () {
@@ -8,31 +8,8 @@ export function mulberry32(seed) {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
-
-export function hashStr(s) {
-  let h = 2166136261;
-  for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
-  return h >>> 0;
-}
-
-export function makeRng(seed) {
-  const r = mulberry32(typeof seed === 'string' ? hashStr(seed) : seed);
-  return {
-    next: r,
-    range: (a, b) => a + r() * (b - a),
-    int: (a, b) => Math.floor(a + r() * (b - a + 1)),
-    pick: (arr) => arr[Math.floor(r() * arr.length)],
-    chance: (p) => r() < p,
-  };
-}
-
-export const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-export const lerp = (a, b, t) => a + (b - a) * t;
-export const dist2d = (ax, az, bx, bz) => Math.hypot(ax - bx, az - bz);
-export const TAU = Math.PI * 2;
-export function angLerp(a, b, t) {
-  let d = (b - a) % TAU;
-  if (d > Math.PI) d -= TAU;
-  if (d < -Math.PI) d += TAU;
-  return a + d * t;
-}
+export function pick(rng, arr) { return arr[Math.floor(rng() * arr.length)]; }
+export function range(rng, a, b) { return a + rng() * (b - a); }
+export function dist2d(x1, z1, x2, z2) { const dx = x2 - x1, dz = z2 - z1; return Math.sqrt(dx * dx + dz * dz); }
+export function clamp(v, a, b) { return v < a ? a : v > b ? b : v; }
+export function lerp(a, b, t) { return a + (b - a) * t; }

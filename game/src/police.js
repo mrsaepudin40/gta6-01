@@ -1,133 +1,130 @@
-// Wanted level, police cars, arrests (BUSTED).
+// Wanted level: heat 0-100, stars 0-5, cop cars chase + ram, foot officers,
+// police helicopter at 3+ stars. BUSTED when caught slow and close.
 import * as THREE from 'three';
 import { CFG } from './config.js';
-import { makeCopCarMesh, makeHeliMesh } from './entities.js';
-import { makeCarState, driveCar } from './car.js';
-import { angLerp, dist2d, clamp } from './random.js';
-import { nearestRoadCenter } from './world.js';
+import { buildCopCar, buildHeli, buildPed } from './entities.js';
+import { dist2d, clamp } from './random.js';
 import { audio } from './audio.js';
 
-export function makePolice(scene) {
-  return { heat: 0, cars: [], bustT: 0, scene, heli: null };
+export function newPoliceState() {
+  return { heat: 0, stars: 0, copCars: [], footCops: [], heli: null, sirenT: 0, bustedT: 0 };
 }
-
-export function starsOf(heat) { return Math.min(5, Math.floor(heat / 20)); }
 
 export function addHeat(game, n) {
-  game.police.heat = clamp(game.police.heat + n, 0, 100);
-  game.bestWanted = Math.max(game.bestWanted, starsOf(game.police.heat));
+  const p = game.police;
+  p.heat = clamp(p.heat + n, 0, 100);
+  p.stars = Math.min(5, Math.floor(p.heat / 20));
 }
+
+export function starsOf(game) { return game.police.stars; }
 
 function spawnCopCar(game) {
   const p = game.player;
   const px = p.inCar ? p.inCar.x : p.x;
   const pz = p.inCar ? p.inCar.z : p.z;
   const a = Math.random() * Math.PI * 2;
-  const sp = nearestRoadCenter(px + Math.sin(a) * 120, pz + Math.cos(a) * 120);
-  const mesh = makeCopCarMesh();
-  game.police.scene.add(mesh);
-  const st = makeCarState(sp.x, sp.z, 0, { mesh, max: CFG.CAR_MAX + 2, accel: CFG.CAR_ACCEL + 6, kind: 'police' });
-  game.police.cars.push(st);
-  return st;
+  const car = { mesh: buildCopCar(), x: px + Math.cos(a) * 130, z: pz + Math.sin(a) * 130, angle: 0, speed: 0 };
+  car.mesh.position.set(car.x, 0, car.z);
+  game.scene.add(car.mesh);
+  game.police.copCars.push(car);
+}
+
+function spawnFootCop(game) {
+  const p = game.player;
+  const px = p.inCar ? p.inCar.x : p.x;
+  const pz = p.inCar ? p.inCar.z : p.z;
+  const mesh = buildPed(0x2248c8);
+  const a = Math.random() * Math.PI * 2;
+  const cop = { mesh, x: px + Math.cos(a) * 40, z: pz + Math.sin(a) * 40, hp: 60 };
+  mesh.position.set(cop.x, 0, cop.z);
+  game.scene.add(mesh);
+  game.police.footCops.push(cop);
 }
 
 export function updatePolice(game, dt) {
   const pol = game.police;
   const p = game.player;
-  const stars = starsOf(pol.heat);
-  // heat slowly decays when no crime recently
-  pol.heat = Math.max(0, pol.heat - dt * (stars === 0 ? 0 : 0.9));
-  // Shootout scene: pin exactly 3 stars (heat decay would drop it to 2,
-  // and Jax's shots must not push it up and spawn extra cop cars).
-  if (game.shotMode === 'shootout') pol.heat = 60;
-  const want = stars === 0 ? 0 : Math.min(CFG.COP_MAX_CARS, stars);
-  while (pol.cars.length < want) spawnCopCar(game);
-  while (pol.cars.length > want) {
-    const c = pol.cars.pop();
-    pol.scene.remove(c.mesh);
-  }
   const px = p.inCar ? p.inCar.x : p.x;
   const pz = p.inCar ? p.inCar.z : p.z;
-  const pSpeed = p.inCar ? Math.abs(p.inCar.speed) : 0;
-  // Shot mode: police hold formation (convoy) so the cover always shows the chase.
-  if (game.shotMode === 'chase') {
-    for (const c of pol.cars) {
-      c.heading = Math.PI;
-      c.speed = pSpeed;
-      c.x += Math.sin(c.heading) * c.speed * dt;
-      c.z += Math.cos(c.heading) * c.speed * dt;
-      if (c.mesh) { c.mesh.position.set(c.x, 0, c.z); c.mesh.rotation.y = c.heading; }
-    }
-    audio.siren(true);
-    audio.updateSiren(dt);
-    return;
-  }
-  // Shot mode: cops hold their cover positions for the shootout scene —
-  // no driving in, no BUSTED (the frame must stay a firefight).
-  if (game.shotMode === 'shootout') {
-    for (const c of pol.cars) {
-      if (c.mesh) { c.mesh.position.set(c.x, 0, c.z); c.mesh.rotation.y = c.heading; }
-    }
-    audio.siren(true);
-    audio.updateSiren(dt);
-    return;
-  }
-  for (const c of pol.cars) {
-    const wantH = Math.atan2(px - c.x, pz - c.z);
-    c.heading = angLerp(c.heading, wantH, Math.min(1, dt * 1.6));
-    const input = { forward: true, back: false, left: false, right: false };
-    let err = wantH - c.heading;
-    while (err > Math.PI) err -= Math.PI * 2;
-    while (err < -Math.PI) err += Math.PI * 2;
-    input.left = err > 0.1; input.right = err < -0.1;
-    driveCar(c, input, dt, game.world, null);
-    // ram the player car
-    if (p.inCar && dist2d(c.x, c.z, px, pz) < 4.5) {
-      p.inCar.hp -= 14 * dt;
-      if (p.inCar.hp <= 0) { p.inCar.hp = 0; }
-    }
-  }
-  // BUSTED: a cop car sits on the player while slow/on foot
-  const near = pol.cars.some((c) => dist2d(c.x, c.z, px, pz) < 5);
-  if (stars > 0 && near && pSpeed < 2) {
-    pol.bustT += dt;
-    if (pol.bustT > 1.5) { game.state = 'busted'; audio.siren(false); audio.engine(false, 0); }
-  } else pol.bustT = 0;
-  // siren while wanted
-  audio.siren(stars > 0 && game.state === 'playing');
-  if (game.state === 'playing') audio.updateSiren(dt);
-}
+  const speed = p.inCar ? Math.abs(p.inCar.speed) : 0;
 
-// Police helicopter: appears at 3+ stars, hovers above the player with a spotlight.
-export function updateHeli(game, dt) {
-  const pol = game.police;
-  const stars = starsOf(pol.heat);
-  const p = game.player;
-  const px = p.inCar ? p.inCar.x : p.x;
-  const pz = p.inCar ? p.inCar.z : p.z;
-  if (stars >= 3 && !pol.heli) {
-    const mesh = makeHeliMesh();
-    pol.scene.add(mesh);
-    pol.heli = { mesh, x: px + 30, z: pz + 30 };
-  } else if (stars < 3 && pol.heli) {
-    pol.scene.remove(pol.heli.mesh);
-    pol.heli = null;
+  // heat decays when the player is slow / hiding
+  if (pol.stars > 0) {
+    pol.heat = Math.max(0, pol.heat - dt * (speed > 5 ? 0.4 : 2.2));
+    pol.stars = Math.min(5, Math.floor(pol.heat / 20));
   }
-  const h = pol.heli;
-  if (!h) return;
-  // Hover AHEAD of the player (not directly overhead) and low enough to stay
-  // inside the third-person camera frame — the chase shot must show it.
-  // Track FAST (dt*3): at SwiftShader frame rates a slow lerp lags ~28u
-  // behind a 30u/s car and the heli ends up overhead, out of frame.
-  const heading = p.inCar ? p.inCar.heading : p.heading;
-  const fx = Math.sin(heading), fz = Math.cos(heading);
-  const tx = px + fx * 45 - fz * 12;
-  const tz = pz + fz * 45 + fx * 12;
-  h.x += (tx - h.x) * Math.min(1, dt * 3);
-  h.z += (tz - h.z) * Math.min(1, dt * 3);
-  const y = 15 + Math.sin(performance.now() * 0.0012) * 1.2;
-  h.mesh.position.set(h.x, y, h.z);
-  h.mesh.rotation.y = Math.atan2(px - h.x, pz - h.z);
-  const rotor = h.mesh.userData.rotor;
-  if (rotor) rotor.rotation.y += dt * 22;
+  // spawns
+  if (pol.stars >= 1 && pol.copCars.length < Math.min(CFG.COP_MAX_CARS, pol.stars)) spawnCopCar(game);
+  if (pol.stars >= 2 && pol.footCops.length < Math.min(CFG.COP_MAX_FOOT, pol.stars - 1)) spawnFootCop(game);
+  if (pol.stars >= 3 && !pol.heli) {
+    pol.heli = buildHeli();
+    pol.heli.position.set(px + 30, 55, pz - 30);
+    game.scene.add(pol.heli);
+  }
+  if (pol.stars < 3 && pol.heli) { game.scene.remove(pol.heli); pol.heli = null; }
+
+  // cop cars chase + ram
+  for (const car of pol.copCars) {
+    const d = dist2d(car.x, car.z, px, pz);
+    const target = Math.atan2(-(pz - car.z), px - car.x);
+    let da = target - car.angle;
+    while (da > Math.PI) da -= Math.PI * 2;
+    while (da < -Math.PI) da += Math.PI * 2;
+    car.angle += clamp(da, -1.6 * dt, 1.6 * dt);
+    car.speed = clamp(car.speed + 18 * dt, 0, 34);
+    car.x += Math.cos(car.angle) * car.speed * dt;
+    car.z -= Math.sin(car.angle) * car.speed * dt;
+    car.mesh.position.set(car.x, 0, car.z);
+    car.mesh.rotation.y = car.angle;
+    for (const w of car.mesh.userData.wheels) w.rotation.z += car.speed * dt * 1.6;
+    // lightbar flash
+    const on = Math.floor(game.time * 6) % 2 === 0;
+    car.mesh.userData.lightbar[0].material.color.setHex(on ? 0xff2a2a : 0x551111);
+    car.mesh.userData.lightbar[1].material.color.setHex(on ? 0x112255 : 0x2a6bff);
+    // ram the player car
+    if (p.inCar && d < 6 && Math.abs(p.inCar.speed) < 6) {
+      p.inCar.hp -= 12 * dt;
+      if (p.inCar.hp <= 0) { game.state = 'wasted'; }
+    }
+    // busted: close + slow on foot
+    if (!p.inCar && d < 5 && pol.bustedT <= 0) {
+      pol.bustedT = 1.2;
+    }
+  }
+  if (pol.bustedT > 0) {
+    pol.bustedT -= dt;
+    const d = pol.copCars.length ? dist2d(pol.copCars[0].x, pol.copCars[0].z, px, pz) : 99;
+    if (!p.inCar && d < 6 && pol.bustedT <= 0) game.state = 'busted';
+  }
+  // foot cops walk toward the player
+  for (const cop of pol.footCops) {
+    const d = dist2d(cop.x, cop.z, px, pz);
+    if (d > 2) {
+      const a = Math.atan2(-(pz - cop.z), px - cop.x);
+      cop.x += Math.cos(a) * 3.2 * dt;
+      cop.z -= Math.sin(a) * 3.2 * dt;
+      cop.mesh.position.set(cop.x, 0, cop.z);
+      cop.mesh.rotation.y = Math.atan2(px - cop.x, pz - cop.z);
+    } else if (!p.inCar) {
+      p.hp -= 6 * dt;
+      if (p.hp <= 0) game.state = 'wasted';
+    }
+  }
+  // helicopter hovers over the player
+  if (pol.heli) {
+    const h = pol.heli;
+    h.position.x += (px + 18 - h.position.x) * dt * 1.2;
+    h.position.z += (pz - 14 - h.position.z) * dt * 1.2;
+    h.position.y = 55 + Math.sin(game.time * 1.3) * 2;
+    h.rotation.y += dt * 0.4;
+    for (const r of h.userData.rotors) r.rotation.y += dt * 22;
+    pol.sirenT -= dt;
+    if (pol.sirenT <= 0) { audio.sirenBlip(); pol.sirenT = 2.4; }
+  }
+  // cleanup when heat is gone
+  if (pol.stars === 0) {
+    for (const car of pol.copCars) game.scene.remove(car.mesh);
+    for (const cop of pol.footCops) game.scene.remove(cop.mesh);
+    pol.copCars = []; pol.footCops = [];
+  }
 }

@@ -1,12 +1,11 @@
 // Eight story missions: objectives, dialogue, rewards, timers, result banners.
-import { MISSIONS } from './config.js';
+import { MISSIONS, MARKERS } from './config.js';
 import { audio } from './audio.js';
 import { addHeat } from './police.js';
 import { dist2d } from './random.js';
 import { writeSave } from './save.js';
 import { spawnShowdownCrew } from './combat.js';
 
-// Night Shift stash spots: beach, park, riverside.
 const STASHES = [
   { x: 1200, z: 0 },
   { x: -1000, z: 600 },
@@ -14,7 +13,7 @@ const STASHES = [
 ];
 
 export function newMissionState() {
-  return { idx: -1, stage: 0, timer: 0, marker: null, dialog: [], dialogT: 0, completed: false, started: false, done: 0, banner: null, bannerT: 0 };
+  return { idx: -1, stage: 0, timer: 0, marker: null, dialog: [], dialogT: 0, completed: false, started: false, done: 0, banner: null, bannerT: 0, nextIdx: 0, nextT: 0 };
 }
 
 export function say(game, who, text, secs = 3.2) {
@@ -25,7 +24,7 @@ export function say(game, who, text, secs = 3.2) {
 export function missionTitle(game) {
   const m = game.mission;
   if (!m.started || m.idx < 0) return '';
-  return `MISSION ${m.idx + 1}/8 — ${MISSIONS[m.idx].name.toUpperCase()}`;
+  return `CHAPTER ${m.idx + 1} · ${MISSIONS[m.idx].name.toUpperCase()}`;
 }
 
 export function missionObjective(game) {
@@ -33,41 +32,31 @@ export function missionObjective(game) {
   if (m.completed) return 'Solmar Bay is yours. Free roam — cause chaos, lose the law, have fun.';
   if (!m.started || m.idx < 0) return 'Press Enter to start your first job for Mara.';
   const def = MISSIONS[m.idx];
-  if (m.idx === 5) return `${def.name}: Collect stash ${Math.min(m.stage + 1, 3)}/3 — stay quiet, stay dark.`;
-  return `${def.name}: ${def.briefing}`;
+  if (m.idx === 5) return `Collect stash ${Math.min(m.stage + 1, 3)}/3 — stay quiet, stay dark.`;
+  return def.briefing;
 }
 
-function markerFor(game, idx, stage) {
-  const W = game.world.markers;
+function markerFor(idx, stage) {
   switch (idx) {
-    case 0: return stage === 0 ? null : { ...W.riverside };
-    case 1: return stage === 0 ? { ...W.docks } : { ...W.safehouse };
-    case 2: return { ...W.hideout };
-    case 3: return stage === 0 ? { ...W.docks } : { ...W.beach };
-    case 4: return { ...W.garage };
+    case 0: return stage === 0 ? null : { ...MARKERS.riverside };
+    case 1: return stage === 0 ? { ...MARKERS.docks } : { ...MARKERS.safehouse };
+    case 2: return { ...MARKERS.hideout };
+    case 3: return stage === 0 ? { ...MARKERS.docks } : { ...MARKERS.beach };
+    case 4: return { ...MARKERS.garage };
     case 5: return { ...STASHES[stage] };
-    case 6: return { ...W.bridge };
-    case 7: return { ...W.docks };
+    case 6: return { ...MARKERS.bridge };
+    case 7: return { ...MARKERS.docks };
     default: return null;
   }
 }
 
 export function syncObjectiveMarker(game) {
-  const m = game.mission;
-  const w = game.world;
+  const m = game.mission, w = game.world;
   if (!w) return;
-  if (w.markerMesh && m.marker) {
-    w.markerMesh.position.set(m.marker.x, 60, m.marker.z);
-    w.markerMesh.visible = true;
-  }
-  if (w.objectiveRing && m.marker) {
-    w.objectiveRing.position.set(m.marker.x, 0.6, m.marker.z);
-    w.objectiveRing.visible = true;
-  }
-  if (w.objectiveDiamond && m.marker) {
-    w.objectiveDiamond.position.set(m.marker.x, 20, m.marker.z);
-    w.objectiveDiamond.visible = true;
-  }
+  const on = !!m.marker;
+  if (w.markerMesh) { w.markerMesh.visible = on; if (on) w.markerMesh.position.set(m.marker.x, 65, m.marker.z); }
+  if (w.objectiveRing) { w.objectiveRing.visible = on; if (on) w.objectiveRing.position.set(m.marker.x, 0.6, m.marker.z); }
+  if (w.objectiveDiamond) { w.objectiveDiamond.visible = on; if (on) w.objectiveDiamond.position.set(m.marker.x, 20, m.marker.z); }
 }
 
 function hideObjectiveMarker(game) {
@@ -85,7 +74,7 @@ export function startMission(game, idx) {
   if (idx === 2 || idx === 3 || idx === 6) m.timer = 90;
   if (idx === 2) addHeat(game, 40);
   if (idx === 6) addHeat(game, 80);
-  m.marker = markerFor(game, idx, 0);
+  m.marker = markerFor(idx, 0);
   syncObjectiveMarker(game);
   for (const [who, text] of def.dialog) say(game, who, text, 3.2);
   say(game, 'Objective', def.briefing, 5);
@@ -107,11 +96,11 @@ export function updateMissions(game, dt) {
   }
   const idx = m.idx;
   if (idx === 0) {
-    if (m.stage === 0 && p.inCar) { m.stage = 1; m.marker = markerFor(game, 0, 1); say(game, 'Mara', 'Good. Now bring it to Riverside.', 3); }
+    if (m.stage === 0 && p.inCar) { m.stage = 1; m.marker = markerFor(0, 1); say(game, 'Mara', 'Good. Now bring it to Riverside.', 3); }
     else if (m.stage === 1 && at(m.marker, 55)) completeMission(game);
   } else if (idx === 1) {
     if (m.stage === 0 && at(m.marker, 55)) {
-      m.stage = 1; m.marker = markerFor(game, 1, 1);
+      m.stage = 1; m.marker = markerFor(1, 1);
       addHeat(game, 40);
       say(game, 'Mara', 'Package secured. The law is coming — get to the Safe House!', 3.5);
       audio.pickup();
@@ -119,9 +108,8 @@ export function updateMissions(game, dt) {
   } else if (idx === 2 || idx === 6) {
     if (at(m.marker, 55)) completeMission(game);
   } else if (idx === 3) {
-    // Cold Chain is two-stage: pick up at the docks, then run to Sunset Beach
     if (m.stage === 0 && at(m.marker, 55)) {
-      m.stage = 1; m.marker = markerFor(game, 3, 1);
+      m.stage = 1; m.marker = markerFor(3, 1);
       say(game, 'Mara', 'Cargo secured. Run it to Sunset Beach before the ice melts!', 3.5);
       audio.pickup();
     } else if (m.stage === 1 && at(m.marker, 55)) completeMission(game);
@@ -135,12 +123,11 @@ export function updateMissions(game, dt) {
       if (n >= 3) completeMission(game);
       else {
         m.stage = n;
-        m.marker = markerFor(game, 5, m.stage);
+        m.marker = markerFor(5, m.stage);
         say(game, 'Mara', `Stash ${n}/3 secured. ${3 - n} to go.`, 3);
       }
     }
   } else if (idx === 7) {
-    // showdown: reaching the docks starts the fight; killing the whole crew ends it
     if (m.stage === 0 && at(m.marker, 90)) {
       m.stage = 1;
       spawnShowdownCrew(game);

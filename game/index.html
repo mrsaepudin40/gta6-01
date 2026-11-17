@@ -1,179 +1,244 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Solmar Bay — a sun-baked crime story (3D)</title>
+<title>Solmar Bay — a sun-baked crime story in 3D</title>
 <style>
-  html, body { margin: 0; padding: 0; background: #14100c; min-height: 100vh; overflow: hidden; }
-  body { display: grid; place-items: center; font-family: 'Segoe UI', system-ui, sans-serif; }
-  #wrap { position: relative; width: min(100vw, 177.78vh); height: min(100vh, 56.25vw); }
-  canvas#game { width: 100%; height: 100%; display: block; background: #1a0d06; }
-  .hud { position: absolute; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.8); pointer-events: none; z-index: 5; }
-  .panel { background: rgba(10,10,16,.62); border-radius: 8px; padding: 8px 12px; }
-  #hud-topleft { top: 12px; left: 12px; font-size: 22px; font-weight: 800; line-height: 1.25; }
-  #hud-topleft .stars { color: #ffd23f; font-size: 20px; letter-spacing: 2px; }
-  #hud-topleft .clock { color: #ffd23f; font-size: 15px; font-weight: 700; }
-  #minimap { position: absolute; bottom: 12px; left: 12px; width: 230px; height: 230px; border: 3px solid rgba(255,255,255,.85); border-radius: 50%; background: #f3ecdc; z-index: 5; }
-  #hud-banner { top: 12px; left: 50%; transform: translateX(-50%); text-align: center; min-width: 420px; }
-  #hud-mission-arrow { font-size: 24px; color: #ffd23f; display: none; line-height: 1; }
-  #hud-district { color: #ffd23f; font-size: 14px; font-weight: 800; letter-spacing: 1px; }
-  #hud-interact { bottom: 64px; left: 50%; transform: translateX(-50%); font-size: 16px; font-weight: 800; color: #7df3ff; background: rgba(10,20,30,.75); border: 1px solid rgba(125,243,255,.6); white-space: nowrap; }
-  #hud-mission-title { color: #ffd23f; font-weight: 800; font-size: 17px; letter-spacing: .5px; }
-  #hud-mission-sub { font-size: 13px; opacity: .95; margin-top: 2px; }
-  #hud-dialog { bottom: 108px; left: 50%; transform: translateX(-50%); max-width: 640px; text-align: center; font-size: 15px; }
-  #hud-dialog-who { color: #ffd23f; font-weight: 800; }
-  #hud-passed { top: 38%; left: 50%; transform: translate(-50%, -50%); font-size: 34px; font-weight: 900; color: #7dff8a; text-shadow: 0 2px 10px rgba(0,0,0,.9); }
-  #hud-bottomleft { top: 12px; right: 12px; bottom: auto; left: auto; font-size: 15px; font-weight: 700; text-align: right; }
-  .bar { width: 170px; height: 12px; background: rgba(255,255,255,.22); border-radius: 6px; overflow: hidden; margin: 3px 0; }
-  .bar > div { height: 100%; background: #37d67a; }
-  #hud-car-fill { background: #5ec4d6; }
-  #hud-ammo { font-size: 17px; margin-top: 4px; }
-  #hud-bottomright { bottom: 12px; right: 12px; text-align: right; font-size: 15px; font-weight: 700; }
-  #hud-speed { font-size: 26px; font-weight: 900; }
-  #hud-hint { bottom: 12px; left: 50%; transform: translateX(-50%); font-size: 12px; opacity: .75; }
-  #wrap.title-mode .hud, #wrap.title-mode #minimap { display: none !important; }
-  .overlay { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; flex-direction: column; background: radial-gradient(ellipse at center, rgba(20,10,0,.28), rgba(10,5,0,.55)); color: #fff; text-align: center; z-index: 10; }
-  .overlay h1 { font-size: 84px; margin: 0; color: #ffd23f; letter-spacing: 4px; text-shadow: 0 4px 24px rgba(0,0,0,.8); }
-  .overlay h2 { font-size: 30px; margin: 4px 0 18px; color: #ff5a5a; letter-spacing: 6px; }
-  .overlay p { font-size: 17px; max-width: 560px; line-height: 1.5; }
-  .overlay button { pointer-events: auto; cursor: pointer; font-size: 19px; font-weight: 700; color: #fff; background: rgba(255,255,255,.16); border: 2px solid rgba(255,255,255,.4); border-radius: 10px; padding: 12px 34px; margin: 6px; }
-  .overlay button:hover { background: rgba(255,210,63,.35); }
-  #howto { display: none; font-size: 14px; background: rgba(0,0,0,.5); border-radius: 8px; padding: 10px 16px; margin-top: 10px; text-align: left; line-height: 1.7; }
-  #title h1 { font-size: 64px; }
-  #title-controls { background: rgba(0,0,0,.55); border: 1px solid rgba(255,210,63,.5); border-radius: 10px; padding: 10px 18px; margin-top: 12px; text-align: left; }
-  #title-controls h3 { color: #ffd23f; margin: 0 0 6px; font-size: 15px; letter-spacing: 3px; }
-  .ctl-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 3px 30px; font-size: 13px; line-height: 1.5; }
-  .ctl-grid b { color: #ffd23f; display: inline-block; width: 104px; }
-  .ctl-grid span { opacity: .9; }
-  #citymap { background: rgba(5,8,5,.85); }
-  #citymap-inner { display: flex; gap: 18px; align-items: flex-start; text-align: left; }
-  #citymap-left h2 { color: #ffd23f; margin: 0 0 8px; font-size: 26px; letter-spacing: 4px; }
-  #citymap-canvas { border: 3px solid #ffd23f; border-radius: 10px; background: #f3ecdc; }
-  #citymap-right { width: 300px; background: rgba(12,16,12,.92); border: 2px solid rgba(255,210,63,.5); border-radius: 12px; padding: 16px 18px; }
-  #citymap-job-act { color: #7df3ff; font-size: 12px; font-weight: 800; letter-spacing: 2px; }
-  #citymap-job-title { color: #ffd23f; font-size: 24px; font-weight: 900; margin: 4px 0; }
-  #citymap-job-desc { font-size: 14px; line-height: 1.5; opacity: .95; }
-  #citymap-job-reward { color: #7dff8a; font-weight: 800; font-size: 16px; margin: 10px 0; }
-  #citymap-list { border-top: 1px solid rgba(255,255,255,.2); padding-top: 8px; font-size: 14px; line-height: 1.8; }
-  .cm-item.cur { color: #ffd23f; font-weight: 800; }
-  .cm-foot { font-size: 12px; opacity: .7; margin-top: 10px; }
-  #phone { background: rgba(5,8,5,.82); }
-  #phone-frame { width: 460px; background: #10160f; border: 3px solid #2f6df6; border-radius: 22px; padding: 16px 18px; text-align: left; box-shadow: 0 8px 40px rgba(0,0,0,.7); }
-  #phone-frame h2 { color: #7df3ff; margin: 0; font-size: 18px; letter-spacing: 2px; }
-  #phone-frame .ph-sub { font-size: 12px; opacity: .7; margin-bottom: 10px; }
-  #phone-tabs { display: flex; gap: 6px; margin-bottom: 10px; }
-  #phone-tabs button { flex: 1; pointer-events: auto; cursor: pointer; font-size: 13px; font-weight: 800; color: #fff; background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.3); border-radius: 8px; padding: 7px 0; }
-  #phone-tabs button.sel { background: #ff8c1a; border-color: #ff8c1a; }
-  .phone-panel { font-size: 14px; line-height: 1.5; }
-  #phone-map { width: 100%; border-radius: 10px; background: #f3ecdc; display: block; }
-  #phone-job-act { color: #7df3ff; font-size: 11px; font-weight: 800; letter-spacing: 2px; }
-  #phone-job-title { color: #ffd23f; font-size: 21px; font-weight: 900; margin: 2px 0; }
-  #phone-job-reward { color: #7dff8a; font-weight: 800; margin: 6px 0; }
-  #phone-stats { font-size: 14px; line-height: 1.9; }
-  #phone .cm-foot { text-align: center; }
-  #garage-menu { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 560px; background: rgba(12,8,4,.92); border: 3px solid #ff8c1a; border-radius: 14px; color: #fff; padding: 20px 26px; z-index: 8; display: none; }
-  #garage-menu h2 { color: #ff8c1a; margin: 0 0 4px; font-size: 30px; text-align: center; letter-spacing: 2px; }
-  #garage-menu .g-sub { text-align: center; opacity: .85; font-size: 14px; }
-  #garage-cash { text-align: center; color: #7dff8a; font-weight: 800; font-size: 19px; margin: 8px 0 12px; }
-  .g-item { display: flex; justify-content: space-between; gap: 12px; padding: 10px 12px; border-radius: 8px; margin: 6px 0; background: rgba(255,255,255,.07); }
-  .g-item.sel { background: rgba(255,140,26,.3); outline: 2px solid #ff8c1a; }
-  .g-item b { font-size: 16px; }
-  .g-item span { opacity: .8; font-size: 13px; display: block; }
-  .g-item em { color: #ffd23f; font-style: normal; font-weight: 800; font-size: 17px; white-space: nowrap; }
-  .g-foot { text-align: center; font-size: 13px; opacity: .75; margin-top: 10px; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #1a1210; font-family: Arial, Helvetica, sans-serif; }
+  #game-canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  .hidden { display: none !important; }
+  .panel { background: rgba(12, 14, 22, 0.72); border-radius: 10px; color: #fff; backdrop-filter: blur(2px); }
+
+  /* ---- HUD ---- */
+  #hud { position: fixed; inset: 0; pointer-events: none; z-index: 5; }
+  #chapter-panel { position: absolute; top: 14px; left: 14px; padding: 10px 14px; border-left: 4px solid #ffd23f; max-width: 430px; }
+  #chapter-title { font-size: 15px; font-weight: 900; letter-spacing: 1px; color: #ffd23f; }
+  #chapter-obj { font-size: 13px; line-height: 1.35; margin-top: 4px; color: #eef2ff; }
+  #money-panel { position: absolute; top: 14px; right: 14px; padding: 8px 14px; text-align: right; }
+  #clock-day { font-size: 12px; color: #ffd9a0; letter-spacing: 1px; }
+  #money { font-size: 26px; font-weight: 900; color: #7dff8a; }
+  #stars { font-size: 20px; letter-spacing: 2px; }
+  .star { color: #555; }
+  .star.on { color: #ffd23f; text-shadow: 0 0 8px #ffb300; }
+  #wanted-status { font-size: 12px; font-weight: 800; letter-spacing: 2px; color: #ff5f6d; }
+  #weapon-panel { position: absolute; top: 128px; right: 14px; padding: 8px 12px; display: flex; align-items: center; gap: 10px; }
+  #weapon-icon { font-size: 22px; }
+  #weapon-name { font-size: 11px; color: #ffd9a0; letter-spacing: 1px; }
+  #weapon-ammo { font-size: 20px; font-weight: 900; }
+  #health-panel { position: absolute; top: 196px; right: 14px; padding: 8px 12px; width: 170px; }
+  .hp-row { display: flex; align-items: center; gap: 6px; margin: 3px 0; font-size: 11px; font-weight: 800; }
+  .hp-bar { flex: 1; height: 9px; background: rgba(255,255,255,0.18); border-radius: 5px; overflow: hidden; }
+  .hp-fill { height: 100%; background: #37d67a; border-radius: 5px; }
+  #car-fill { background: #54c8ff; }
+  #minimap-wrap { position: absolute; left: 14px; bottom: 14px; }
+  #minimap { width: 230px; height: 230px; border-radius: 50%; border: 4px solid rgba(255,255,255,0.85); box-shadow: 0 4px 24px rgba(0,0,0,0.5); }
+  #minimap-district { position: absolute; top: -8px; left: 50%; transform: translateX(-50%); background: #ffd23f; color: #222; font-size: 11px; font-weight: 900; padding: 2px 10px; border-radius: 8px; letter-spacing: 1px; white-space: nowrap; }
+  #speedo { position: absolute; right: 16px; bottom: 16px; padding: 10px 16px; text-align: right; min-width: 170px; }
+  #speed-num { font-size: 44px; font-weight: 900; line-height: 1; }
+  #speed-unit { font-size: 13px; color: #ffd9a0; }
+  #speed-car { font-size: 12px; font-weight: 800; letter-spacing: 1px; color: #9fd8f2; }
+  #speed-track { height: 6px; background: rgba(255,255,255,0.18); border-radius: 3px; margin-top: 6px; overflow: hidden; }
+  #speed-fill { height: 100%; background: linear-gradient(90deg, #37d67a, #ffd23f, #ff5f6d); }
+  #radio-label { position: absolute; right: 16px; bottom: 132px; padding: 6px 12px; font-size: 13px; color: #ffd9a0; }
+  #hud-district { position: absolute; left: 258px; bottom: 200px; font-size: 13px; font-weight: 900; letter-spacing: 2px; color: #fff; text-shadow: 0 2px 6px rgba(0,0,0,0.7); }
+  #controls-hint { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); font-size: 12px; color: rgba(255,255,255,0.75); text-shadow: 0 1px 4px rgba(0,0,0,0.8); }
+  #district-banner { position: absolute; left: 50%; top: 34%; transform: translateX(-50%); text-align: center; transition: opacity 1s; }
+  #district-banner.fade { opacity: 0; }
+  #district-name { font-size: 44px; font-weight: 900; letter-spacing: 4px; color: #fff; text-shadow: 0 0 18px rgba(255,180,80,0.9), 0 3px 8px rgba(0,0,0,0.7); }
+  #district-blurb { font-size: 15px; color: #ffd9a0; text-shadow: 0 2px 6px rgba(0,0,0,0.8); }
+  #dialog-bar { position: absolute; left: 50%; bottom: 64px; transform: translateX(-50%); display: flex; gap: 12px; align-items: center; padding: 10px 18px; max-width: 640px; }
+  #dialog-avatar { width: 42px; height: 42px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 18px; color: #111; flex-shrink: 0; }
+  #dialog-name { font-size: 12px; font-weight: 900; color: #ffd23f; letter-spacing: 1px; }
+  #dialog-text { font-size: 15px; line-height: 1.3; }
+  #mission-banner { position: absolute; left: 50%; top: 44%; transform: translateX(-50%); font-size: 30px; font-weight: 900; letter-spacing: 2px; color: #ffd23f; text-shadow: 0 0 16px rgba(255,180,0,0.8), 0 3px 8px rgba(0,0,0,0.8); white-space: nowrap; }
+  #prompt { position: absolute; left: 50%; bottom: 132px; transform: translateX(-50%); padding: 8px 16px; font-size: 15px; font-weight: 800; background: rgba(12,14,22,0.8); border: 1px solid #ffd23f; border-radius: 8px; color: #fff; }
+
+  /* ---- map screen ---- */
+  #map-screen { position: fixed; inset: 0; background: rgba(8, 10, 18, 0.94); z-index: 20; display: flex; flex-direction: column; padding: 18px 26px; color: #fff; }
+  #map-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; }
+  #map-header h1 { font-size: 28px; letter-spacing: 2px; }
+  #map-header h1 span { color: #ffd23f; }
+  #map-header .hint { font-size: 13px; color: #9fb2cc; }
+  #map-body { flex: 1; display: flex; gap: 18px; min-height: 0; }
+  #story-col { width: 300px; flex-shrink: 0; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; }
+  #story-col h2 { font-size: 14px; letter-spacing: 2px; color: #ffd23f; }
+  .story-item { display: flex; gap: 10px; align-items: center; background: rgba(255,255,255,0.06); border-radius: 8px; padding: 9px 10px; }
+  .story-item.next { border: 1px solid #ffd23f; background: rgba(255,210,63,0.12); }
+  .story-item.locked { opacity: 0.55; }
+  .story-ava { width: 30px; height: 30px; border-radius: 50%; background: #ffd23f; color: #111; display: flex; align-items: center; justify-content: center; font-weight: 900; flex-shrink: 0; }
+  .story-name { font-size: 13px; font-weight: 900; }
+  .story-sub { font-size: 12px; color: #9fb2cc; }
+  .story-reward { margin-left: auto; font-weight: 900; color: #7dff8a; font-size: 13px; }
+  #bigmap-wrap { flex: 1; display: flex; align-items: center; justify-content: center; min-width: 0; }
+  #bigmap { max-width: 100%; max-height: 100%; border-radius: 12px; border: 3px solid #ffd23f; }
+  #map-right { width: 220px; flex-shrink: 0; display: flex; flex-direction: column; gap: 14px; }
+  #map-right h2 { font-size: 14px; letter-spacing: 2px; color: #54e0ff; }
+  .legend-row { font-size: 13px; padding: 3px 0; color: #dfe8ff; }
+  #map-stats { background: rgba(255,255,255,0.06); border-radius: 8px; padding: 12px; font-size: 14px; line-height: 1.7; }
+  #map-stats b { color: #7dff8a; }
+
+  /* ---- phone ---- */
+  #phone { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 480px; max-width: 92vw; background: #101623; border: 3px solid #54c8ff; border-radius: 18px; z-index: 25; padding: 16px; color: #fff; box-shadow: 0 12px 48px rgba(0,0,0,0.7); }
+  #phone h2 { color: #54e0ff; letter-spacing: 2px; font-size: 20px; }
+  #phone-sub { font-size: 12px; color: #9fb2cc; margin-bottom: 10px; }
+  .phone-tabs { display: flex; gap: 8px; margin-bottom: 12px; }
+  .phone-tab { flex: 1; padding: 8px 0; text-align: center; border-radius: 8px; background: rgba(255,255,255,0.08); font-size: 13px; font-weight: 800; cursor: pointer; border: none; color: #fff; }
+  .phone-tab.active { background: #ff8a1e; }
+  .phone-row { padding: 8px 4px; border-bottom: 1px solid rgba(255,255,255,0.08); font-size: 14px; }
+  .phone-row b { color: #7dff8a; }
+  .phone-hint { text-align: center; font-size: 12px; color: #9fb2cc; margin-top: 8px; }
+
+  /* ---- title ---- */
+  #title-screen { position: fixed; inset: 0; z-index: 30; background: linear-gradient(180deg, rgba(20,10,8,0.55) 0%, rgba(20,10,8,0.05) 40%, rgba(20,10,8,0.15) 70%, rgba(10,8,14,0.75) 100%); color: #fff; padding: 40px 60px; display: flex; flex-direction: column; }
+  #title-sun { position: absolute; top: 8%; left: 50%; transform: translateX(-50%); width: 260px; height: 260px; border-radius: 50%; background: radial-gradient(circle, #fff3c4 0%, #ffb36b 45%, #ff7a3c 75%, rgba(255,122,60,0) 100%); opacity: 0.85; z-index: -1; }
+  #title-screen h1 { font-size: 84px; font-weight: 900; letter-spacing: 4px; line-height: 0.95; background: linear-gradient(180deg, #fff3c4, #ffb36b 55%, #ff5f6d); -webkit-background-clip: text; background-clip: text; color: transparent; text-shadow: 0 6px 30px rgba(0,0,0,0.35); }
+  #title-tag { font-size: 17px; color: #ffe9c4; margin-top: 10px; max-width: 560px; line-height: 1.45; text-shadow: 0 2px 8px rgba(0,0,0,0.7); }
+  #title-menu { margin-top: 34px; display: flex; flex-direction: column; gap: 12px; width: 320px; }
+  .menu-btn { pointer-events: auto; cursor: pointer; text-align: left; background: rgba(12,14,22,0.72); border: 2px solid transparent; border-radius: 10px; color: #fff; padding: 12px 18px; font-size: 20px; font-weight: 900; letter-spacing: 1px; }
+  .menu-btn:hover, .menu-btn.primary { border-color: #ffd23f; background: rgba(255,180,60,0.25); }
+  .menu-btn .sub { display: block; font-size: 12px; font-weight: 400; color: #ffd9a0; margin-top: 2px; }
+  #howto-panel { position: absolute; top: 40px; right: 60px; padding: 18px 22px; width: 340px; }
+  #howto-panel h2 { color: #54e0ff; letter-spacing: 2px; font-size: 18px; margin-bottom: 10px; }
+  .how-row { display: flex; gap: 12px; font-size: 14px; padding: 4px 0; }
+  .how-row b { width: 74px; color: #ffd23f; flex-shrink: 0; }
+  #char-row { position: absolute; bottom: 54px; right: 60px; display: flex; gap: 14px; }
+  .char-chip { text-align: center; }
+  .char-face { width: 52px; height: 52px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 18px; color: #111; border: 2px solid rgba(255,255,255,0.6); }
+  .char-name { font-size: 12px; font-weight: 900; margin-top: 4px; }
+  .char-role { font-size: 11px; color: #c9d4e8; }
+  #title-foot { position: absolute; bottom: 18px; left: 60px; font-size: 13px; color: #ffe9c4; text-shadow: 0 2px 6px rgba(0,0,0,0.8); }
+
+  /* ---- garage / center ---- */
+  #garage-menu { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 560px; max-width: 92vw; background: rgba(14,12,10,0.94); border: 2px solid #ff8a1e; border-radius: 14px; z-index: 25; padding: 20px 24px; color: #fff; }
+  #garage-menu h2 { color: #ff8a1e; font-size: 26px; letter-spacing: 2px; text-align: center; }
+  #garage-sub { text-align: center; color: #ffd9a0; font-size: 13px; margin: 4px 0 6px; }
+  #garage-cash { text-align: center; color: #7dff8a; font-size: 20px; font-weight: 900; margin-bottom: 12px; }
+  .garage-item { display: flex; justify-content: space-between; align-items: center; gap: 14px; background: rgba(255,255,255,0.06); border-radius: 8px; padding: 12px 14px; margin: 8px 0; }
+  .garage-item.sel { border: 2px solid #ff8a1e; background: rgba(255,138,30,0.16); }
+  .garage-desc { font-size: 12px; color: #c9d4e8; margin-top: 2px; }
+  .garage-price { font-size: 18px; font-weight: 900; color: #ffd23f; white-space: nowrap; }
+  #garage-msg { text-align: center; font-size: 12px; color: #9fb2cc; margin-top: 10px; }
+  #center-screen { position: fixed; inset: 0; z-index: 28; background: rgba(8,8,12,0.72); display: flex; flex-direction: column; align-items: center; justify-content: center; color: #fff; text-align: center; }
+  #center-title { font-size: 64px; font-weight: 900; letter-spacing: 6px; }
+  #center-sub { font-size: 18px; color: #ffd9a0; margin-top: 10px; }
+  #center-hint { font-size: 14px; color: #c9d4e8; margin-top: 22px; }
 </style>
+</head>
+<body>
+<canvas id="game-canvas"></canvas>
+
+<div id="hud" class="hidden">
+  <div id="chapter-panel" class="panel">
+    <div id="chapter-title">SOLMAR BAY · FREE ROAM</div>
+    <div id="chapter-obj">Press Enter to start your first job for Mara.</div>
+  </div>
+  <div id="money-panel" class="panel">
+    <div id="clock-day">DAY 1 18:52</div>
+    <div id="money">$0</div>
+    <div id="stars"></div>
+    <div id="wanted-status"></div>
+  </div>
+  <div id="weapon-panel" class="panel">
+    <span id="weapon-icon">🔫</span>
+    <div><div id="weapon-name">PISTOL</div><div id="weapon-ammo">24 / 48</div></div>
+  </div>
+  <div id="health-panel" class="panel">
+    <div class="hp-row">HEALTH <div class="hp-bar"><div id="health-fill" class="hp-fill" style="width:100%"></div></div></div>
+    <div class="hp-row" id="car-row">CAR <div class="hp-bar"><div id="car-fill" class="hp-fill" style="width:100%"></div></div></div>
+  </div>
+  <div id="minimap-wrap"><canvas id="minimap" width="230" height="230"></canvas><div id="minimap-district">DOWNTOWN</div></div>
+  <div id="speedo" class="panel hidden">
+    <div><span id="speed-num">0</span> <span id="speed-unit">KM/H</span></div>
+    <div id="speed-car">SEDAN</div>
+    <div id="speed-track"><div id="speed-fill" style="width:0%"></div></div>
+  </div>
+  <div id="radio-label" class="panel">♪ SOLMAR FM 98.4 · <b>C</b> change</div>
+  <div id="hud-district">DOWNTOWN</div>
+  <div id="controls-hint">W/S drive · A/D steer · E exit car · F punch · Click shoot · G garage (near Benny's) · C radio · M mute · P pause</div>
+  <div id="district-banner" class="hidden"><div id="district-name">DOWNTOWN</div><div id="district-blurb"></div></div>
+  <div id="dialog-bar" class="panel hidden"><div id="dialog-avatar">M</div><div><div id="dialog-name">Mara</div><div id="dialog-text"></div></div></div>
+  <div id="mission-banner" class="hidden"></div>
+  <div id="prompt" class="hidden"></div>
+</div>
+
+<div id="map-screen" class="hidden">
+  <div id="map-header"><h1>SOLMAR BAY <span>CITY MAP</span></h1><div class="hint">Tab / M — close</div></div>
+  <div id="map-body">
+    <div id="story-col"><h2>STORY</h2><div id="story-list"></div></div>
+    <div id="bigmap-wrap"><canvas id="bigmap" width="760" height="570"></canvas></div>
+    <div id="map-right">
+      <h2>LEGEND</h2>
+      <div>
+        <div class="legend-row">▶ You are here</div>
+        <div class="legend-row">◆ Job objective</div>
+        <div class="legend-row">G Benny's Garage</div>
+        <div class="legend-row">— — Route to objective</div>
+        <div class="legend-row">● Police</div>
+        <div class="legend-row">H Helicopter</div>
+      </div>
+      <div id="map-stats"></div>
+    </div>
+  </div>
+</div>
+
+<div id="phone" class="hidden">
+  <h2>📱 SOLMAR OS</h2>
+  <div id="phone-sub">Jax Marlowe · Esc — close phone</div>
+  <div class="phone-tabs">
+    <button class="phone-tab active" data-tab="Map">🗺 Map</button>
+    <button class="phone-tab" data-tab="Missions">★ Missions</button>
+    <button class="phone-tab" data-tab="Stats">📊 Stats</button>
+    <button class="phone-tab" data-tab="Controls">🎮 Controls</button>
+  </div>
+  <div id="phone-body"></div>
+</div>
+
+<div id="title-screen">
+  <div id="title-sun"></div>
+  <h1>SOLMAR<br>BAY</h1>
+  <div id="title-tag">A sun-baked crime story in 3D — Jax Marlowe takes the bay. Steal cars. Outrun the law. Run eight jobs for Mara. Own the docks.</div>
+  <div id="title-menu">
+    <button class="menu-btn primary" id="btn-continue">▶ CONTINUE<span class="sub" id="continue-sub"></span></button>
+    <button class="menu-btn" id="btn-new">▶ NEW GAME</button>
+    <button class="menu-btn" id="btn-how">? HOW TO PLAY</button>
+  </div>
+  <div id="howto-panel" class="panel hidden">
+    <h2>HOW TO PLAY</h2>
+    <div class="how-row"><b>WASD</b><span>Walk / drive</span></div>
+    <div class="how-row"><b>Mouse</b><span>Aim · Click to shoot</span></div>
+    <div class="how-row"><b>Shift</b><span>Sprint</span></div>
+    <div class="how-row"><b>E</b><span>Enter / steal car</span></div>
+    <div class="how-row"><b>F</b><span>Punch</span></div>
+    <div class="how-row"><b>Enter</b><span>Start job</span></div>
+    <div class="how-row"><b>Tab</b><span>City map + jobs</span></div>
+    <div class="how-row"><b>Esc</b><span>Phone</span></div>
+    <div class="how-row"><b>G</b><span>Benny's Garage</span></div>
+    <div class="how-row"><b>C</b><span>Next radio station</span></div>
+    <div class="how-row"><b>M / P</b><span>Mute / Pause</span></div>
+  </div>
+  <div id="char-row"></div>
+  <div id="title-foot">An original game. No Rockstar content. Runs fully offline.</div>
+</div>
+
+<div id="garage-menu" class="hidden">
+  <h2>BENNY'S GARAGE</h2>
+  <div id="garage-sub">Benny fixes anything — for the right price.</div>
+  <div id="garage-cash">Cash: $0</div>
+  <div id="garage-items"></div>
+  <div id="garage-msg"></div>
+</div>
+
+<div id="center-screen" class="hidden">
+  <div id="center-title">BUSTED</div>
+  <div id="center-sub"></div>
+  <div id="center-hint">Press R to restart</div>
+</div>
+
 <script type="importmap">
 { "imports": { "three": "./vendor/three.module.min.js" } }
 </script>
-</head>
-<body>
-<div id="wrap">
-  <canvas id="game" width="1280" height="720"></canvas>
-  <div id="hud-topleft" class="hud panel"><div id="hud-money">$0</div><div class="stars" id="hud-stars">☆☆☆☆☆</div><div class="clock" id="hud-clock">Day 1 17:40</div><div class="district" id="hud-district">DOWNTOWN</div></div>
-  <canvas id="minimap"></canvas>
-  <div id="hud-banner" class="hud panel" style="display:none"><span id="hud-mission-arrow">➤</span><div id="hud-mission-title"></div><div id="hud-mission-sub"></div></div>
-  <div id="hud-dialog" class="hud panel" style="display:none"><span id="hud-dialog-who"></span>: <span id="hud-dialog-text"></span></div>
-  <div id="hud-interact" class="hud panel" style="display:none"></div>
-  <div id="hud-passed" class="hud" style="display:none"><span id="hud-passed-text"></span></div>
-  <div id="hud-bottomleft" class="hud panel"><div>HEALTH</div><div class="bar"><div id="hud-hp-fill" style="width:100%"></div></div><div id="hud-car-row" style="display:none">CAR<div class="bar"><div id="hud-car-fill" style="width:100%"></div></div></div><div id="hud-ammo">PISTOL 12/24</div></div>
-  <div id="hud-bottomright" class="hud panel"><div id="hud-speed">— mph</div><div id="hud-radio">♪ SOLMAR FM 98.4 · C</div></div>
-  <div id="hud-hint" class="hud"></div>
-
-  <div id="title" class="overlay">
-    <h1>SOLMAR BAY</h1>
-    <p>A sun-baked crime story in 3D — Jax Marlowe takes the bay.<br>Steal cars. Outrun the law. Run eight jobs for Mara. Own the docks.</p>
-    <button id="btn-new">▶ NEW GAME</button>
-    <button id="btn-continue">↻ CONTINUE</button>
-    <button id="btn-how">? HOW TO PLAY</button>
-    <div id="howto">WASD / arrows — move or drive · E — enter / steal / exit car<br>F — punch · Mouse click — shoot · G — Benny's Garage (near it)<br>C — change radio · M — mute · P — pause · R — restart<br>An original game. No Rockstar content. Runs fully offline.</div>
-    <div id="title-controls"><h3>CONTROLS</h3><div class="ctl-grid">
-      <div><b>WASD</b><span>move / drive</span></div><div><b>Mouse click</b><span>shoot</span></div>
-      <div><b>E</b><span>enter / steal car</span></div><div><b>F</b><span>punch</span></div>
-      <div><b>G</b><span>Benny's Garage</span></div><div><b>C</b><span>next radio</span></div>
-      <div><b>Tab</b><span>city map + jobs</span></div><div><b>Enter</b><span>start job</span></div>
-      <div><b>M</b><span>mute</span></div><div><b>P</b><span>pause</span></div>
-      <div><b>R</b><span>restart</span></div><div><b>Esc</b><span>close menu</span></div>
-    </div></div>
-    <p style="opacity:.7;font-size:13px">An original game. No Rockstar content. Runs fully offline.</p>
-  </div>
-
-  <div id="citymap" class="overlay">
-    <div id="citymap-inner">
-      <div id="citymap-left"><h2>SOLMAR BAY</h2><canvas id="citymap-canvas" width="760" height="560"></canvas></div>
-      <div id="citymap-right">
-        <div id="citymap-job-act">CURRENT JOB</div>
-        <div id="citymap-job-title">—</div>
-        <div id="citymap-job-desc"></div>
-        <div id="citymap-job-reward"></div>
-        <div id="citymap-list"></div>
-        <div class="cm-foot">Tab — back to game · M — mute · P — pause</div>
-      </div>
-    </div>
-  </div>
-
-  <div id="phone" class="overlay">
-    <div id="phone-frame">
-      <h2>📱 SOLMAR OS</h2>
-      <div class="ph-sub">Jax Marlowe · Esc — close phone</div>
-      <div id="phone-tabs">
-        <button data-tab="map" class="sel">🗺 Map</button>
-        <button data-tab="missions">★ Missions</button>
-        <button data-tab="stats">📊 Stats</button>
-        <button data-tab="controls">🎮 Controls</button>
-      </div>
-      <div id="phone-panel-map" class="phone-panel"><canvas id="phone-map" width="360" height="270"></canvas></div>
-      <div id="phone-panel-missions" class="phone-panel" style="display:none">
-        <div id="phone-job-act">CURRENT JOB</div>
-        <div id="phone-job-title">—</div>
-        <div id="phone-job-desc"></div>
-        <div id="phone-job-reward"></div>
-        <div id="phone-list"></div>
-      </div>
-      <div id="phone-panel-stats" class="phone-panel" style="display:none"><div id="phone-stats"></div></div>
-      <div id="phone-panel-controls" class="phone-panel" style="display:none">
-        WASD — move / drive · Click — shoot · E — enter / steal car<br>
-        F — punch · G — Benny's Garage · C — next radio<br>
-        Tab — city map · Enter — start job · M — mute<br>
-        P — pause · R — restart · Esc — phone / close
-      </div>
-      <div class="cm-foot">Esc — back to game</div>
-    </div>
-  </div>
-
-  <div id="garage-menu">
-    <h2>BENNY'S GARAGE</h2>
-    <div class="g-sub">Benny fixes anything — for the right price.</div>
-    <div id="garage-cash">Cash: $0</div>
-    <div id="garage-list"></div>
-    <div class="g-foot">↑ ↓ select &nbsp;·&nbsp; Enter buy &nbsp;·&nbsp; G close &nbsp;·&nbsp; Upgrades stay on every car you steal</div>
-  </div>
-
-  <div id="paused" class="overlay"><h2>PAUSED</h2><p>Press P to keep playing.</p></div>
-  <div id="busted" class="overlay"><h2>BUSTED</h2><p>The Bay PD caught up with you. Press R to try again.</p></div>
-  <div id="wasted" class="overlay"><h2>WASTED</h2><p>Solmar Bay is not done with you yet. Press R to try again.</p></div>
-  <div id="complete" class="overlay"><h1 style="font-size:56px">SOLMAR BAY IS YOURS</h1><p>All eight jobs done. Jax Marlowe owns the docks.</p></div>
-</div>
 <script type="module" src="./src/main.js"></script>
 </body>
 </html>

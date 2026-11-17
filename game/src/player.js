@@ -1,92 +1,85 @@
-// Player: on-foot third-person + enter/exit/steal cars (E).
+// On-foot player: movement, camera-relative heading, enter/exit/steal cars.
 import * as THREE from 'three';
-import { CFG, PAL } from './config.js';
-import { makePedMesh, makeCarMesh } from './entities.js';
-import { makeCarState } from './car.js';
-import { clamp, dist2d, angLerp } from './random.js';
-import { collideCircle } from './world.js';
+import { CFG } from './config.js';
+import { buildPed } from './entities.js';
+import { dist2d, clamp } from './random.js';
+import { audio } from './audio.js';
 
-export function makePlayer(scene) {
-  const mesh = makePedMesh(PAL.player);
-  scene.add(mesh);
+export function makePlayer(game) {
+  const mesh = buildPed(0x37d67a);
+  mesh.position.set(0, 0, 100);
+  game.scene.add(mesh);
   return {
-    x: 0, z: 0, heading: 0, hp: CFG.PLAYER_HP, money: 0,
-    mesh, inCar: null, speed: 0,
+    mesh, x: 0, z: 100, angle: 0, hp: CFG.PLAYER_HP, money: 0,
+    inCar: null, speedKmh: 0, ammo: 24, reserve: 48, weapon: 'PISTOL',
   };
 }
 
-export function updatePlayerOnFoot(p, input, dt, world, camYaw) {
-  let mx = (input.right ? 1 : 0) - (input.left ? 1 : 0);
-  let mz = (input.forward ? 1 : 0) - (input.back ? 1 : 0);
+export function updatePlayer(game, dt, input) {
+  const p = game.player;
+  if (p.inCar) return;
+  let mx = 0, mz = 0;
+  if (input.forward) mz -= 1;
+  if (input.back) mz += 1;
+  if (input.left) mx -= 1;
+  if (input.right) mx += 1;
   const len = Math.hypot(mx, mz);
   if (len > 0) {
-    mx /= len; mz /= len;
-    // move relative to camera yaw
-    const sin = Math.sin(camYaw), cos = Math.cos(camYaw);
-    const wx = mx * cos - mz * sin;
-    const wz = mx * sin + mz * cos;
-    const want = Math.atan2(wx, wz);
-    p.heading = angLerp(p.heading, want, Math.min(1, dt * 10));
-    p.x += wx * CFG.PLAYER_SPEED * dt;
-    p.z += wz * CFG.PLAYER_SPEED * dt;
-    p.speed = CFG.PLAYER_SPEED;
-  } else p.speed = 0;
-  const c = collideCircle(world, p.x, p.z, 0.8);
-  p.x = c.x; p.z = c.z;
+    // camera-relative: camera looks along -z of its own yaw
+    const cy = game.cameraYaw;
+    const fx = Math.sin(cy), fz = Math.cos(cy);
+    const rx = Math.cos(cy), rz = -Math.sin(cy);
+    const dx = (fx * mz + rx * mx) / len, dz = (fz * mz + rz * mx) / len;
+    const nx = p.x + dx * CFG.PLAYER_SPEED * dt;
+    const nz = p.z + dz * CFG.PLAYER_SPEED * dt;
+    let blocked = false;
+    for (const c of game.world.colliders) {
+      if (nx > c.x0 - 1 && nx < c.x1 + 1 && nz > c.z0 - 1 && nz < c.z1 + 1) { blocked = true; break; }
+    }
+    if (!blocked && Math.abs(nx) < 1580 && Math.abs(nz) < 1180) { p.x = nx; p.z = nz; }
+    p.angle = Math.atan2(dx, dz);
+  }
   p.mesh.position.set(p.x, 0, p.z);
-  p.mesh.rotation.y = p.heading;
-  const t2 = performance.now() * 0.01;
-  const legs = p.mesh.userData.legs || [];
-  const sw = p.speed > 0 ? 0.6 : 0;
-  if (legs[0]) legs[0].rotation.x = Math.sin(t2) * sw;
-  if (legs[1]) legs[1].rotation.x = -Math.sin(t2) * sw;
+  p.mesh.rotation.y = p.angle;
+  // simple walk bob
+  p.mesh.position.y = len > 0 ? Math.abs(Math.sin(game.time * 10)) * 0.12 : 0;
 }
 
-// Find the nearest enterable car (parked or traffic) within 5 units.
-// Returns { ref, parked, traffic } or null.
-export function nearestCar(p, traffic) {
-  let best = null, bd = 5;
-  for (const c of traffic.parked) {
-    if (c.taken) continue;
-    const d = dist2d(p.x, p.z, c.x, c.z);
-    if (d < bd) { bd = d; best = { ref: c, parked: true, traffic: false }; }
-  }
-  for (const c of traffic.cars) {
-    const d = dist2d(p.x, p.z, c.x, c.z);
-    if (d < bd) { bd = d; best = { ref: c, parked: false, traffic: true }; }
+function nearestCar(game, maxD) {
+  const p = game.player;
+  let best = null, bestD = maxD;
+  for (const car of [...game.parked, ...game.traffic]) {
+    const d = dist2d(p.x, p.z, car.x, car.z);
+    if (d < bestD) { best = car; bestD = d; }
   }
   return best;
 }
 
-export function enterCar(game, found) {
+export function tryEnterCar(game) {
   const p = game.player;
-  const car = found.ref;
-  let st;
-  if (found.parked) {
-    car.taken = true;
-    st = makeCarState(car.x, car.z, car.heading, { mesh: car.mesh, sport: car.sport, max: car.sport ? CFG.CAR_MAX_SPORT : CFG.CAR_MAX, kind: car.kind });
-  } else if (found.traffic) {
-    // steal a traffic car: remove it from the loop
-    const idx = game.traffic.cars.indexOf(car);
-    if (idx >= 0) game.traffic.cars.splice(idx, 1);
-    st = makeCarState(car.x, car.z, car.heading, { mesh: car.mesh, max: CFG.CAR_MAX, kind: car.kind || 'sedan' });
-  } else return;
-  st.hp = 100; st.maxHp = 100;
-  p.inCar = st;
+  const car = nearestCar(game, 7);
+  if (!car) return false;
+  game.parked = game.parked.filter((c) => c !== car);
+  game.traffic = game.traffic.filter((c) => c !== car);
+  p.inCar = car;
   p.mesh.visible = false;
-  return st;
+  audio.engineStart(0);
+  return true;
 }
 
 export function exitCar(game) {
   const p = game.player;
-  if (!p.inCar) return;
   const car = p.inCar;
-  // leave the car as a parked car in the world
-  const parked = { x: car.x, z: car.z, heading: car.heading, mesh: car.mesh, sport: car.sport, kind: car.kind, taken: true };
-  game.traffic.parked.push(parked);
-  p.x = car.x + Math.sin(car.heading + Math.PI / 2) * 3;
-  p.z = car.z + Math.cos(car.heading + Math.PI / 2) * 3;
+  if (!car) return;
+  p.inCar = null;
+  p.x = car.x + Math.cos(car.angle + Math.PI / 2) * 4;
+  p.z = car.z - Math.sin(car.angle + Math.PI / 2) * 4;
   p.mesh.visible = true;
   p.mesh.position.set(p.x, 0, p.z);
-  p.inCar = null;
+  audio.engineStop();
+}
+
+export function stealPrompt(game) {
+  if (game.player.inCar) return null;
+  return nearestCar(game, 7) ? '[E] Steal Car' : null;
 }

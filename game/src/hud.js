@@ -1,365 +1,342 @@
-// HUD: DOM readouts + 2D top-down minimap canvas + overlays.
-import { CFG, RADIO, GARAGE_UPGRADES, MISSIONS } from './config.js';
-import { missionTitle, missionObjective } from './missions.js';
-import { starsOf } from './police.js';
-import { priceOf, nearGarage } from './garage.js';
-import { nearestCar } from './player.js';
-import { dist2d } from './random.js';
+// Interface: HUD, bright round minimap, fullscreen city map, SOLMAR OS phone,
+// title screen, dialog bar, district banners. All DOM — the 3D canvas stays clean.
+import { MISSIONS, DISTRICTS, RADIO, GARAGE_UPGRADES, CHARACTERS } from './config.js';
+import { districtAt } from './world.js';
+import { audio } from './audio.js';
 
 const $ = (id) => document.getElementById(id);
-const cache = {};
+let lastDistrict = '';
+let mapOpen = false;
+let phoneTab = 'Map';
 
-function setText(id, v) {
-  if (cache[id] !== v) { cache[id] = v; const el = $(id); if (el) el.textContent = v; }
+export function initHud(game) {
+  $('btn-new').onclick = () => { audio.unlock(); audio.click(); startNewGame(game); };
+  $('btn-continue').onclick = () => { audio.unlock(); audio.click(); continueGame(game); };
+  $('btn-how').onclick = () => { audio.click(); $('howto-panel').classList.toggle('hidden'); };
+  document.querySelectorAll('.phone-tab').forEach((b) => {
+    b.onclick = () => { phoneTab = b.dataset.tab; audio.click(); renderPhone(game); };
+  });
+  buildCharRow();
 }
 
-export function initHud() {
-  const mm = $('minimap');
-  if (mm) { mm.width = 230; mm.height = 230; }
-  const cm = $('citymap-canvas');
-  if (cm) { cm.width = 760; cm.height = 560; }
-  const pm = $('phone-map');
-  if (pm) { pm.width = 360; pm.height = 270; }
-  initPhone();
+function buildCharRow() {
+  const row = $('char-row');
+  row.innerHTML = '';
+  for (const c of CHARACTERS) {
+    const d = document.createElement('div');
+    d.className = 'char-chip';
+    d.innerHTML = `<div class="char-face" style="background:${c.color}">${c.init}</div><div class="char-name">${c.short}</div><div class="char-role">${c.role}</div>`;
+    row.appendChild(d);
+  }
 }
 
-function districtOf(x, z) {
-  if (x > 1300) return 'SUNSET BEACH';
-  if (x < -1400) return 'OLD DOCKS';
-  if (Math.abs(x + 800) < 300 && Math.abs(z - 400) < 300) return "BENNY'S ROW";
-  if (z < -800) return 'NORTHSIDE';
-  if (z > 800) return 'RIVERSIDE';
-  return 'DOWNTOWN';
+export function startNewGame(game) {
+  game.newGame();
+}
+export function continueGame(game) {
+  game.continueGame();
+}
+
+function starRow(n) {
+  let s = '';
+  for (let i = 0; i < 5; i++) s += `<span class="star ${i < n ? 'on' : ''}">★</span>`;
+  return s;
 }
 
 export function updateHud(game) {
-  const p = game.player;
-  const stars = starsOf(game.police.heat);
-  setText('hud-money', '$' + Math.round(p.money).toLocaleString('en-US'));
-  setText('hud-stars', '★'.repeat(stars) + '☆'.repeat(5 - stars));
-  const day = game.day;
-  const hh = String(Math.floor(game.clockMin / 60) % 24).padStart(2, '0');
-  const mm = String(Math.floor(game.clockMin % 60)).padStart(2, '0');
-  setText('hud-clock', `Day ${day} ${hh}:${mm}`);
-  const px0 = p.inCar ? p.inCar.x : p.x;
-  const pz0 = p.inCar ? p.inCar.z : p.z;
-  setText('hud-district', districtOf(px0, pz0));
-  setText('hud-radio', '♪ ' + RADIO[game.radioIdx] + ' · C');
-  const speed = p.inCar ? Math.abs(p.inCar.speed) * 3.6 : 0;
-  setText('hud-speed', p.inCar ? Math.round(speed) + ' mph' : '— mph');
-  const hp = p.inCar ? p.inCar.hp : p.hp;
-  const hpMax = p.inCar ? p.inCar.maxHp : CFG.PLAYER_HP;
-  const hb = $('hud-hp-fill');
-  if (hb) hb.style.width = Math.max(0, (hp / hpMax) * 100) + '%';
-  const cb = $('hud-car-fill');
-  if (cb) {
-    cb.style.width = p.inCar ? Math.max(0, (p.inCar.hp / p.inCar.maxHp) * 100) + '%' : '0%';
-    const row = $('hud-car-row');
-    if (row) row.style.display = p.inCar ? 'flex' : 'none';
+  const p = game.player, m = game.mission;
+  // chapter panel
+  const title = m.started && m.idx >= 0 ? `CHAPTER ${m.idx + 1} · ${MISSIONS[m.idx].name.toUpperCase()}` : 'SOLMAR BAY · FREE ROAM';
+  $('chapter-title').textContent = title;
+  let obj = '';
+  if (m.started && m.idx >= 0) {
+    obj = MISSIONS[m.idx].briefing;
+    if (m.idx === 5) obj = `Collect stash ${Math.min(m.stage + 1, 3)}/3 — stay quiet, stay dark.`;
+    if (m.timer > 0) obj += `  ⏱ ${Math.ceil(m.timer)}s`;
+    if (m.marker) obj += `  ·  ${Math.round(distToMarker(game))}m`;
+  } else if (m.completed) obj = 'Solmar Bay is yours. Free roam — cause chaos, lose the law, have fun.';
+  else obj = 'Press Enter to start your first job for Mara.';
+  $('chapter-obj').textContent = obj;
+  // money + clock + stars
+  $('clock-day').textContent = `DAY ${game.clock.day}  ${String(game.clock.hour).padStart(2, '0')}:${String(Math.floor(game.clock.minute)).padStart(2, '0')}`;
+  $('money').textContent = `$${p.money.toLocaleString('en-US')}`;
+  $('stars').innerHTML = starRow(game.police.stars);
+  const st = game.police.stars === 0 ? '' : (game.police.stars >= 3 ? 'IN SIGHT' : 'EVADING');
+  $('wanted-status').textContent = st;
+  $('wanted-status').className = st ? 'wanted-' + st.toLowerCase().replace(' ', '-') : '';
+  // weapon
+  $('weapon-name').textContent = p.weapon;
+  $('weapon-ammo').textContent = `${p.ammo} / ${p.reserve}`;
+  // speedometer (driving only)
+  if (p.inCar) {
+    $('speedo').classList.remove('hidden');
+    $('speed-num').textContent = Math.round(p.speedKmh);
+    $('speed-car').textContent = p.inCar.sport ? 'VESPERA GT' : 'SEDAN';
+    $('speed-fill').style.width = `${Math.min(100, (p.speedKmh / 180) * 100)}%`;
+  } else $('speedo').classList.add('hidden');
+  // radio + district
+  $('radio-label').innerHTML = `♪ ${RADIO[game.radioIdx]} · <b>C</b> change`;
+  const d = districtAt(p.inCar ? p.inCar.x : p.x, p.inCar ? p.inCar.z : p.z);
+  $('hud-district').textContent = d.name;
+  if (d.name !== lastDistrict) {
+    lastDistrict = d.name;
+    showDistrictBanner(d);
   }
-  setText('hud-ammo', p.inCar ? '' : `PISTOL ${game.combat.ammo}/${game.combat.reserve}`);
-  const am = $('hud-ammo');
-  if (am) am.style.display = p.inCar ? 'none' : 'block';
-  // mission banner + objective direction arrow (points at the target)
-  const m = game.mission;
-  const banner = $('hud-banner');
-  if (banner) {
-    if (m.started && m.idx >= 0) {
-      banner.style.display = 'block';
-      setText('hud-mission-title', missionTitle(game));
-      let sub = missionObjective(game);
-      if (m.timer > 0) sub += `  ·  ⏱ ${Math.ceil(m.timer)}s`;
-      if (m.marker) {
-        const px = p.inCar ? p.inCar.x : p.x;
-        const pz = p.inCar ? p.inCar.z : p.z;
-        sub += `  ·  ${Math.round(dist2d(px, pz, m.marker.x, m.marker.z))}m`;
-      }
-      setText('hud-mission-sub', sub);
-    } else banner.style.display = 'none';
-  }
-  const arrow = $('hud-mission-arrow');
-  if (arrow) {
-    if (m.started && m.marker) {
-      const px = p.inCar ? p.inCar.x : p.x;
-      const pz = p.inCar ? p.inCar.z : p.z;
-      const bearing = Math.atan2(m.marker.x - px, m.marker.z - pz);
-      const rel = bearing - game.camYaw;
-      arrow.style.display = 'inline-block';
-      arrow.style.transform = `rotate(${rel - Math.PI / 2}rad)`;
-    } else arrow.style.display = 'none';
-  }
-  // interaction prompt — [E] steal / [G] garage / [E] market stall, like the reference
-  const inter = $('hud-interact');
-  if (inter) {
-    let txt = '';
-    if (!game.garage.open && nearGarage(game)) txt = "[G] Benny's Garage — Upgrades & Repairs";
-    else if (!p.inCar && nearestCar(p, game.traffic)) txt = '[E] Steal Car';
-    else if (!p.inCar && game.world.stalls) {
-      const near = game.world.stalls.some(([sx, sz]) => dist2d(px0, pz0, sx, sz) < 30);
-      if (near) txt = '[E] Beach Market — Snacks & Drinks';
-    }
-    if (txt) { inter.style.display = 'block'; setText('hud-interact', txt); }
-    else inter.style.display = 'none';
-  }
-  // dialogue
-  const dlg = $('hud-dialog');
-  if (dlg) {
-    if (m.dialog.length > 0) {
-      dlg.style.display = 'block';
-      const d = m.dialog[0];
-      setText('hud-dialog-who', d.who);
-      setText('hud-dialog-text', d.text);
-    } else dlg.style.display = 'none';
-  }
+  // dialog bar
+  if (m.dialog.length > 0) {
+    const { who, text } = m.dialog[0];
+    const ch = CHARACTERS.find((c) => c.short === who) || { color: '#888', init: who[0], name: who };
+    $('dialog-bar').classList.remove('hidden');
+    $('dialog-avatar').textContent = ch.init;
+    $('dialog-avatar').style.background = ch.color;
+    $('dialog-name').textContent = ch.name || who;
+    $('dialog-text').textContent = text;
+  } else $('dialog-bar').classList.add('hidden');
   // mission passed banner
-  const passed = $('hud-passed');
-  if (passed) {
-    if (m.bannerT > 0 && m.banner) { passed.style.display = 'block'; setText('hud-passed-text', m.banner); }
-    else passed.style.display = 'none';
-  }
-  // hint line
-  const hint = $('hud-hint');
-  if (hint) {
-    setText('hud-hint', p.inCar
-      ? 'W/S drive · A/D steer · E exit car · F punch · Click shoot · C radio · M mute · P pause'
-      : 'WASD move · E enter car · F punch · Click shoot · G garage (near Benny’s) · C radio · M mute');
-  }
+  if (m.bannerT > 0 && m.banner) {
+    $('mission-banner').textContent = m.banner;
+    $('mission-banner').classList.remove('hidden');
+  } else $('mission-banner').classList.add('hidden');
+  // prompts
+  const prompt = game.promptText || '';
+  if (prompt) { $('prompt').textContent = prompt; $('prompt').classList.remove('hidden'); }
+  else $('prompt').classList.add('hidden');
+  // health bars
+  $('health-fill').style.width = `${Math.max(0, p.hp)}%`;
+  $('car-fill').style.width = p.inCar ? `${Math.max(0, (p.inCar.hp / p.inCar.maxHp) * 100)}%` : '100%';
+  $('car-row').style.visibility = p.inCar ? 'visible' : 'hidden';
+  // minimap
   drawMinimap(game);
-  updateGarageMenu(game);
-  if (game.mapOpen) { drawCityMap(game); updateCityMapPanel(game); }
-  if (game.phoneOpen) { drawPhoneMap(game); updatePhonePanel(game); }
+  // garage menu
+  if (game.garage.open) renderGarage(game);
 }
 
+function distToMarker(game) {
+  const p = game.player, mk = game.mission.marker;
+  if (!mk) return 0;
+  const px = p.inCar ? p.inCar.x : p.x, pz = p.inCar ? p.inCar.z : p.z;
+  return Math.hypot(mk.x - px, mk.z - pz);
+}
+
+export function showDistrictBanner(d) {
+  $('district-name').textContent = d.name;
+  $('district-blurb').textContent = d.blurb;
+  const b = $('district-banner');
+  b.classList.remove('hidden', 'fade');
+  void b.offsetWidth;
+  b.classList.add('fade');
+  setTimeout(() => b.classList.add('hidden'), 2600);
+}
+
+// ---------- minimap (bright, round, legible) ----------
 function drawMinimap(game) {
   const cv = $('minimap');
-  if (!cv) return;
   const g = cv.getContext('2d');
-  const W = cv.width, H = cv.height;
-  // uniform scale, centered — the canvas is round (CSS border-radius)
-  const s = Math.min(W / CFG.WORLD_W, H / CFG.WORLD_H);
-  const ox = (W - CFG.WORLD_W * s) / 2, oy = (H - CFG.WORLD_H * s) / 2;
-  const X = (x) => ox + (x + CFG.WORLD_W / 2) * s;
-  const Z = (z) => oy + (z + CFG.WORLD_H / 2) * s;
+  const S = cv.width, W = 3200, H = 2400;
+  const sx = (x) => ((x + 1600) / W) * S;
+  const sz = (z) => ((z + 1200) / H) * S;
+  g.clearRect(0, 0, S, S);
   g.save();
-  g.beginPath(); g.arc(W / 2, H / 2, W / 2, 0, Math.PI * 2); g.clip();
-  // bright cream land — reads instantly, like the reference
-  g.fillStyle = '#f3ecdc'; g.fillRect(0, 0, W, H);
-  // park
-  g.fillStyle = '#8cc47a'; g.fillRect(X(-1200), Z(400), CFG.BLOCK * s, CFG.BLOCK * s);
-  // beach + sea
-  g.fillStyle = '#f0d698'; g.fillRect(X(CFG.BEACH_X), 0, X(CFG.WATER_X) - X(CFG.BEACH_X), H);
-  g.fillStyle = '#35b6dd'; g.fillRect(X(CFG.WATER_X), 0, W - X(CFG.WATER_X), H);
-  // roads — thick white grid on cream
-  g.strokeStyle = '#ffffff'; g.lineWidth = Math.max(3, CFG.ROAD_W * s * 0.85);
-  for (let x = -1600; x <= 1600; x += CFG.BLOCK) { g.beginPath(); g.moveTo(X(x), 0); g.lineTo(X(x), H); g.stroke(); }
-  for (let z = -1200; z <= 1200; z += CFG.BLOCK) { g.beginPath(); g.moveTo(0, Z(z)); g.lineTo(X(CFG.BEACH_X), Z(z)); g.stroke(); }
-  // buildings — warm tan blocks
-  g.fillStyle = '#d8a05a';
-  for (const b of game.world.buildings) g.fillRect(X(b.x - b.w / 2), Z(b.z - b.d / 2), Math.max(1.5, b.w * s), Math.max(1.5, b.d * s));
+  g.beginPath(); g.arc(S / 2, S / 2, S / 2, 0, Math.PI * 2); g.clip();
+  // land + sea + sand
+  g.fillStyle = '#f2e8c8'; g.fillRect(0, 0, S, S);
+  g.fillStyle = '#f2d492'; g.fillRect(sx(1400), 0, S - sx(1400), S);
+  g.fillStyle = '#35b6dd'; g.fillRect(sx(1560), 0, S - sx(1560), S);
+  // blocks
+  g.fillStyle = '#e0cfa0';
+  for (let bx = -1600; bx < 1400; bx += 400) for (let bz = -1200; bz < 1200; bz += 400) {
+    g.fillRect(sx(bx + 50), sz(bz + 50), ((400 - 100) / W) * S, ((400 - 100) / H) * S);
+  }
+  // roads
+  g.strokeStyle = '#ffffff'; g.lineWidth = 4;
+  for (const z of [-800, -400, 0, 400, 800]) { g.beginPath(); g.moveTo(0, sz(z)); g.lineTo(S, sz(z)); g.stroke(); }
+  for (const x of [-1200, -800, -400, 0, 400, 800, 1200]) { g.beginPath(); g.moveTo(sx(x), 0); g.lineTo(sx(x), S); g.stroke(); }
   // district labels
-  g.fillStyle = '#6b543a'; g.font = 'bold 9px sans-serif'; g.textAlign = 'center';
-  g.fillText('DOWNTOWN', X(0), Z(0));
-  g.fillText('DOCKS', X(-1100), Z(-700));
-  g.fillText('BEACH', X(1330), Z(0));
-  // route: dashed purple line from player to mission target
-  const m = game.mission;
+  g.fillStyle = '#5a4632'; g.font = 'bold 9px Arial'; g.textAlign = 'center';
+  for (const d of DISTRICTS) g.fillText(d.name, sx((d.x0 + d.x1) / 2), sz((d.z0 + d.z1) / 2));
+  // route to objective
   const p = game.player;
-  const px = p.inCar ? p.inCar.x : p.x;
-  const pz = p.inCar ? p.inCar.z : p.z;
-  if (m.marker) {
-    g.strokeStyle = '#9b30ff'; g.lineWidth = 2; g.setLineDash([4, 3]);
-    g.beginPath(); g.moveTo(X(px), Z(pz)); g.lineTo(X(m.marker.x), Z(m.marker.z)); g.stroke();
+  const px = p.inCar ? p.inCar.x : p.x, pz = p.inCar ? p.inCar.z : p.z;
+  if (game.mission.marker) {
+    g.strokeStyle = '#8a2be2'; g.lineWidth = 2.5; g.setLineDash([5, 4]);
+    g.beginPath(); g.moveTo(sx(px), sz(pz)); g.lineTo(sx(game.mission.marker.x), sz(game.mission.marker.z)); g.stroke();
     g.setLineDash([]);
-    // mission marker — big yellow diamond with red outline
-    const mx = X(m.marker.x), mz = Z(m.marker.z);
-    g.fillStyle = '#ffd23f'; g.strokeStyle = '#d93a3a'; g.lineWidth = 1.5;
-    g.beginPath(); g.moveTo(mx, mz - 8); g.lineTo(mx + 7, mz); g.lineTo(mx, mz + 8); g.lineTo(mx - 7, mz); g.closePath(); g.fill(); g.stroke();
+    g.fillStyle = '#ffb300';
+    g.beginPath(); g.arc(sx(game.mission.marker.x), sz(game.mission.marker.z), 6, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#7a5200'; g.font = 'bold 9px Arial';
+    g.fillText('◆', sx(game.mission.marker.x), sz(game.mission.marker.z) + 3);
   }
-  // garage
-  g.fillStyle = '#ff8c1a';
-  g.beginPath(); g.arc(X(game.world.markers.garage.x), Z(game.world.markers.garage.z), 4, 0, Math.PI * 2); g.fill();
-  // traffic — dark dots on the bright map
-  g.fillStyle = '#333333';
-  for (const c of game.traffic.cars) g.fillRect(X(c.x) - 1.5, Z(c.z) - 1.5, 3, 3);
-  // police — white ring + blue dot
-  for (const c of game.police.cars) {
-    g.fillStyle = '#ffffff';
-    g.beginPath(); g.arc(X(c.x), Z(c.z), 5, 0, Math.PI * 2); g.fill();
-    g.fillStyle = '#2f6df6';
-    g.beginPath(); g.arc(X(c.x), Z(c.z), 3.5, 0, Math.PI * 2); g.fill();
-  }
-  if (game.police.heli) {
-    g.fillStyle = '#ffffff';
-    g.beginPath(); g.arc(X(game.police.heli.x), Z(game.police.heli.z), 5, 0, Math.PI * 2); g.fill();
-    g.fillStyle = '#2f6df6';
-    g.beginPath(); g.arc(X(game.police.heli.x), Z(game.police.heli.z), 3.5, 0, Math.PI * 2); g.fill();
-  }
-  // player arrow — big green arrow, white halo + dark outline
-  const h = p.inCar ? p.inCar.heading : p.heading;
+  // garage marker
+  g.fillStyle = '#ff7a1a';
+  g.beginPath(); g.arc(sx(-800), sz(800), 5, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#fff'; g.font = 'bold 8px Arial'; g.fillText('G', sx(-800), sz(800) + 3);
+  // cops
+  g.fillStyle = '#2248c8';
+  for (const c of game.police.copCars) { g.beginPath(); g.arc(sx(c.x), sz(c.z), 3.5, 0, Math.PI * 2); g.fill(); }
+  if (game.police.heli) { g.fillStyle = '#2248c8'; g.font = 'bold 10px Arial'; g.fillText('H', sx(game.police.heli.position.x), sz(game.police.heli.position.z)); }
+  // player arrow
   g.save();
-  g.translate(X(px), Z(pz));
-  g.rotate(Math.atan2(Math.sin(h), -Math.cos(h)) + Math.PI);
-  g.fillStyle = '#ffffff';
-  g.beginPath(); g.moveTo(0, -11); g.lineTo(8, 8); g.lineTo(-8, 8); g.closePath(); g.fill();
-  g.fillStyle = '#37d67a';
+  g.translate(sx(px), sz(pz));
+  g.rotate(Math.atan2(p.inCar ? Math.cos(p.inCar.angle) : 0, p.inCar ? -Math.sin(p.inCar.angle) : -1) * 0 + (p.inCar ? -p.inCar.angle + Math.PI / 2 : 0));
+  g.fillStyle = '#1d9e4b';
   g.beginPath(); g.moveTo(0, -8); g.lineTo(6, 6); g.lineTo(-6, 6); g.closePath(); g.fill();
   g.restore();
-  // district label on top edge
-  g.fillStyle = '#6b543a'; g.font = 'bold 10px sans-serif';
-  g.fillText(districtOf(px, pz), W / 2, 13);
   g.restore();
+  // ring
+  g.strokeStyle = '#ffffff'; g.lineWidth = 4;
+  g.beginPath(); g.arc(S / 2, S / 2, S / 2 - 2, 0, Math.PI * 2); g.stroke();
+  $('minimap-district').textContent = districtAt(px, pz).name;
 }
 
-function drawMapOnto(cv, game, big) {
-  if (!cv) return;
+// ---------- fullscreen city map (Tab) ----------
+export function openMap(game) {
+  mapOpen = true;
+  $('map-screen').classList.remove('hidden');
+  renderStoryList(game);
+  renderMapStats(game);
+  drawBigMap(game);
+}
+export function closeMap() { mapOpen = false; $('map-screen').classList.add('hidden'); }
+export function isMapOpen() { return mapOpen; }
+
+function renderStoryList(game) {
+  const list = $('story-list');
+  list.innerHTML = '';
+  MISSIONS.forEach((m, i) => {
+    const done = i < game.mission.done;
+    const next = !done && i === game.mission.done;
+    const div = document.createElement('div');
+    div.className = 'story-item' + (done ? ' done' : next ? ' next' : ' locked');
+    div.innerHTML = `<div class="story-ava">${done ? '✓' : next ? '▶' : '🔒'}</div>
+      <div class="story-main"><div class="story-name">${i + 1}. ${m.name.toUpperCase()}</div>
+      <div class="story-sub">${done ? 'Complete' : next ? 'Next — see Mara' : 'Locked'}</div></div>
+      <div class="story-reward">$${m.reward.toLocaleString('en-US')}</div>`;
+    list.appendChild(div);
+  });
+}
+
+function renderMapStats(game) {
+  $('map-stats').innerHTML = `
+    <div>Cash <b>$${game.player.money.toLocaleString('en-US')}</b></div>
+    <div>Respect level <b>${Math.min(5, 1 + game.mission.done)}</b></div>
+    <div>Missions <b>${game.mission.done} / 8</b></div>
+    <div>Garage <b>${game.garage.levels.engine + game.garage.levels.armor + game.garage.levels.service} upgrades</b></div>`;
+}
+
+function drawBigMap(game) {
+  const cv = $('bigmap');
   const g = cv.getContext('2d');
-  const W = cv.width, H = cv.height;
-  const k = big ? 1 : 0.55;
-  const s = Math.min(W / CFG.WORLD_W, H / CFG.WORLD_H);
-  const ox = (W - CFG.WORLD_W * s) / 2, oy = (H - CFG.WORLD_H * s) / 2;
-  const X = (x) => ox + (x + CFG.WORLD_W / 2) * s;
-  const Z = (z) => oy + (z + CFG.WORLD_H / 2) * s;
-  g.fillStyle = '#f3ecdc'; g.fillRect(0, 0, W, H);
-  g.fillStyle = '#8cc47a'; g.fillRect(X(-1200), Z(400), CFG.BLOCK * s, CFG.BLOCK * s);
-  g.fillStyle = '#f0d698'; g.fillRect(X(CFG.BEACH_X), 0, X(CFG.WATER_X) - X(CFG.BEACH_X), H);
-  g.fillStyle = '#35b6dd'; g.fillRect(X(CFG.WATER_X), 0, W - X(CFG.WATER_X), H);
-  g.strokeStyle = '#ffffff'; g.lineWidth = Math.max(4, CFG.ROAD_W * s * 0.85);
-  for (let x = -1600; x <= 1600; x += CFG.BLOCK) { g.beginPath(); g.moveTo(X(x), 0); g.lineTo(X(x), H); g.stroke(); }
-  for (let z = -1200; z <= 1200; z += CFG.BLOCK) { g.beginPath(); g.moveTo(0, Z(z)); g.lineTo(X(CFG.BEACH_X), Z(z)); g.stroke(); }
-  g.fillStyle = '#d8a05a';
-  for (const b of game.world.buildings) g.fillRect(X(b.x - b.w / 2), Z(b.z - b.d / 2), Math.max(2, b.w * s), Math.max(2, b.d * s));
-  // district labels with outline
-  g.textAlign = 'center';
-  const label = (txt, x, z, size, color) => {
-    g.font = `900 ${Math.round(size * k)}px sans-serif`;
-    g.lineWidth = Math.max(2, 4 * k); g.strokeStyle = 'rgba(255,255,255,0.9)';
-    g.strokeText(txt, X(x), Z(z));
-    g.fillStyle = color; g.fillText(txt, X(x), Z(z));
-  };
-  label('DOWNTOWN', 0, -100, 26, '#3a2c1a');
-  label('OLD DOCKS', -1150, -950, 22, '#5a4632');
-  label('NORTHSIDE', 0, -1050, 22, '#5a4632');
-  label('RIVERSIDE', -600, 1000, 22, '#5a4632');
-  label("BENNY'S ROW", -800, 200, 20, '#b35a00');
-  label('SUNSET BEACH', 1300, -600, 18, '#8a6d2f');
-  // letter badges for key places
-  const badge = (letter, x, z, color) => {
-    g.fillStyle = color;
-    g.beginPath(); g.arc(X(x), Z(z), 13 * k, 0, Math.PI * 2); g.fill();
-    g.fillStyle = '#ffffff'; g.font = `900 ${Math.round(15 * k)}px sans-serif`;
-    g.fillText(letter, X(x), Z(z) + 5 * k);
-  };
-  badge('G', game.world.markers.garage.x, game.world.markers.garage.z, '#ff8c1a');
-  badge('H', game.world.markers.hideout.x, game.world.markers.hideout.z, '#7a5fd0');
-  badge('R', game.world.markers.riverside.x, game.world.markers.riverside.z, '#2f9e6e');
-  badge('B', game.world.markers.beach.x, game.world.markers.beach.z, '#d9a03a');
-  // route + mission marker
-  const m = game.mission;
+  const S = cv.width, W = 3200, H = 2400;
+  const sx = (x) => ((x + 1600) / W) * S;
+  const sz = (z) => ((z + 1200) / H) * S;
+  g.fillStyle = '#1d3a4a'; g.fillRect(0, 0, S, S);
+  g.fillStyle = '#f2e8c8'; g.fillRect(0, 0, sx(1400), S);
+  g.fillStyle = '#f2d492'; g.fillRect(sx(1400), 0, sx(1560) - sx(1400), S);
+  g.fillStyle = '#35b6dd'; g.fillRect(sx(1560), 0, S - sx(1560), S);
+  g.fillStyle = '#e0cfa0';
+  for (let bx = -1600; bx < 1400; bx += 400) for (let bz = -1200; bz < 1200; bz += 400) {
+    g.fillRect(sx(bx + 50), sz(bz + 50), ((400 - 100) / W) * S, ((400 - 100) / H) * S);
+  }
+  g.strokeStyle = '#ffffff'; g.lineWidth = 5;
+  for (const z of [-800, -400, 0, 400, 800]) { g.beginPath(); g.moveTo(0, sz(z)); g.lineTo(S, sz(z)); g.stroke(); }
+  for (const x of [-1200, -800, -400, 0, 400, 800, 1200]) { g.beginPath(); g.moveTo(sx(x), 0); g.lineTo(sx(x), S); g.stroke(); }
+  g.fillStyle = '#3a2c1c'; g.font = 'bold 15px Arial'; g.textAlign = 'center';
+  for (const d of DISTRICTS) g.fillText(d.name, sx((d.x0 + d.x1) / 2), sz((d.z0 + d.z1) / 2));
+  // route + markers
   const p = game.player;
-  const px = p.inCar ? p.inCar.x : p.x;
-  const pz = p.inCar ? p.inCar.z : p.z;
-  if (m.marker) {
-    g.strokeStyle = '#9b30ff'; g.lineWidth = Math.max(2, 5 * k); g.setLineDash([12, 8]);
-    g.beginPath(); g.moveTo(X(px), Z(pz)); g.lineTo(X(m.marker.x), Z(m.marker.z)); g.stroke();
+  const px = p.inCar ? p.inCar.x : p.x, pz = p.inCar ? p.inCar.z : p.z;
+  if (game.mission.marker) {
+    g.strokeStyle = '#8a2be2'; g.lineWidth = 4; g.setLineDash([10, 8]);
+    g.beginPath(); g.moveTo(sx(px), sz(pz)); g.lineTo(sx(game.mission.marker.x), sz(game.mission.marker.z)); g.stroke();
     g.setLineDash([]);
-    badge('M', m.marker.x, m.marker.z, '#d93a3a');
+    g.fillStyle = '#ffb300';
+    g.beginPath(); g.arc(sx(game.mission.marker.x), sz(game.mission.marker.z), 10, 0, Math.PI * 2); g.fill();
   }
-  // player arrow
-  const h = p.inCar ? p.inCar.heading : p.heading;
-  g.save();
-  g.translate(X(px), Z(pz));
-  g.rotate(Math.atan2(Math.sin(h), -Math.cos(h)) + Math.PI);
-  g.fillStyle = '#ffffff';
-  g.beginPath(); g.moveTo(0, -16 * k); g.lineTo(12 * k, 12 * k); g.lineTo(-12 * k, 12 * k); g.closePath(); g.fill();
-  g.fillStyle = '#37d67a';
-  g.beginPath(); g.moveTo(0, -12 * k); g.lineTo(9 * k, 9 * k); g.lineTo(-9 * k, 9 * k); g.closePath(); g.fill();
-  g.restore();
+  g.fillStyle = '#ff7a1a';
+  g.beginPath(); g.arc(sx(-800), sz(800), 9, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#fff'; g.font = 'bold 12px Arial'; g.fillText('G', sx(-800), sz(800) + 4);
+  g.fillStyle = '#1d9e4b';
+  g.beginPath(); g.moveTo(sx(px), sz(pz) - 12); g.lineTo(sx(px) + 10, sz(pz) + 8); g.lineTo(sx(px) - 10, sz(pz) + 8); g.closePath(); g.fill();
+  g.fillStyle = '#fff'; g.font = 'bold 12px Arial'; g.fillText('YOU', sx(px), sz(pz) + 26);
 }
 
-function drawCityMap(game) {
-  drawMapOnto($('citymap-canvas'), game, true);
-}
+// ---------- SOLMAR OS phone (Esc) ----------
+export function openPhone(game) { $('phone').classList.remove('hidden'); renderPhone(game); }
+export function closePhone() { $('phone').classList.add('hidden'); }
+export function isPhoneOpen() { return !$('phone').classList.contains('hidden'); }
 
-function drawPhoneMap(game) {
-  drawMapOnto($('phone-map'), game, false);
-}
-
-function updatePhonePanel(game) {
-  const m = game.mission;
-  setText('phone-job-act', m.completed ? 'ALL JOBS DONE' : (m.started ? `CURRENT JOB · ACT ${m.idx + 1}` : 'NO ACTIVE JOB'));
-  const def = m.idx >= 0 ? MISSIONS[m.idx] : null;
-  setText('phone-job-title', def ? def.name : '—');
-  setText('phone-job-desc', def ? def.briefing : 'Press Enter in-game to start your first job for Mara.');
-  setText('phone-job-reward', def ? `Reward $${def.reward} · from ${def.giver}` : '');
-  const list = $('phone-list');
-  if (list) {
-    let html = '';
-    MISSIONS.forEach((d, i) => {
-      const done = i < m.done;
-      const cur = m.started && m.idx === i;
-      html += `<div class="cm-item${cur ? ' cur' : ''}">${done ? '✓' : (cur ? '▶' : '·')} ${i + 1}. ${d.name}</div>`;
-    });
-    if (cache['phone-list'] !== html) { cache['phone-list'] = html; list.innerHTML = html; }
-  }
-  const p = game.player;
-  const stars = starsOf(game.police.heat);
-  setText('phone-stats', `Cash $${Math.round(p.money).toLocaleString('en-US')} · Missions ${m.done}/8 · Day ${game.day} ${String(Math.floor(game.clockMin / 60) % 24).padStart(2, '0')}:${String(Math.floor(game.clockMin % 60)).padStart(2, '0')} · Wanted ${'★'.repeat(stars)}${'☆'.repeat(5 - stars)} · Best ${game.bestWanted}★ · ${districtOf(p.inCar ? p.inCar.x : p.x, p.inCar ? p.inCar.z : p.z)}`);
-}
-
-export function initPhone() {
-  const tabs = document.querySelectorAll('#phone-tabs button');
-  tabs.forEach((btn) => btn.addEventListener('click', () => {
-    tabs.forEach((b) => b.classList.remove('sel'));
-    btn.classList.add('sel');
-    document.querySelectorAll('.phone-panel').forEach((el) => { el.style.display = 'none'; });
-    const panel = $('phone-panel-' + btn.dataset.tab);
-    if (panel) panel.style.display = 'block';
-  }));
-}
-
-function updateCityMapPanel(game) {
-  const m = game.mission;
-  setText('citymap-job-act', m.completed ? 'ALL JOBS DONE' : (m.started ? `CURRENT JOB · ACT ${m.idx + 1}` : 'NO ACTIVE JOB'));
-  const def = m.idx >= 0 ? MISSIONS[m.idx] : null;
-  setText('citymap-job-title', def ? def.name : '—');
-  setText('citymap-job-desc', def ? def.briefing : 'Press Enter in-game to start your first job for Mara.');
-  setText('citymap-job-reward', def ? `Reward $${def.reward} · from ${def.giver}` : '');
-  const list = $('citymap-list');
-  if (list) {
-    let html = '';
-    MISSIONS.forEach((d, i) => {
-      const done = i < m.done;
-      const cur = m.started && m.idx === i;
-      html += `<div class="cm-item${cur ? ' cur' : ''}">${done ? '✓' : (cur ? '▶' : '·')} ${i + 1}. ${d.name}</div>`;
-    });
-    if (cache['citymap-list'] !== html) { cache['citymap-list'] = html; list.innerHTML = html; }
+function renderPhone(game) {
+  document.querySelectorAll('.phone-tab').forEach((b) => b.classList.toggle('active', b.dataset.tab === phoneTab));
+  const body = $('phone-body');
+  if (phoneTab === 'Map') {
+    body.innerHTML = '<canvas id="phonemap" width="420" height="300" style="width:100%;border-radius:10px"></canvas><div class="phone-hint">Esc — back to game</div>';
+    const cv = $('phonemap');
+    const g = cv.getContext('2d');
+    const S = 420, W = 3200, H = 2400;
+    const sx = (x) => ((x + 1600) / W) * S, sz = (z) => ((z + 1200) / H) * 300;
+    g.fillStyle = '#f2e8c8'; g.fillRect(0, 0, S, 300);
+    g.fillStyle = '#35b6dd'; g.fillRect(sx(1560), 0, S - sx(1560), 300);
+    g.strokeStyle = '#fff'; g.lineWidth = 3;
+    for (const z of [-800, -400, 0, 400, 800]) { g.beginPath(); g.moveTo(0, sz(z)); g.lineTo(S, sz(z)); g.stroke(); }
+    for (const x of [-1200, -800, -400, 0, 400, 800, 1200]) { g.beginPath(); g.moveTo(sx(x), 0); g.lineTo(sx(x), 300); g.stroke(); }
+    const p = game.player;
+    const px = p.inCar ? p.inCar.x : p.x, pz = p.inCar ? p.inCar.z : p.z;
+    g.fillStyle = '#1d9e4b';
+    g.beginPath(); g.arc(sx(px), sz(pz), 7, 0, Math.PI * 2); g.fill();
+    if (game.mission.marker) {
+      g.fillStyle = '#ffb300';
+      g.beginPath(); g.arc(sx(game.mission.marker.x), sz(game.mission.marker.z), 7, 0, Math.PI * 2); g.fill();
+    }
+  } else if (phoneTab === 'Missions') {
+    body.innerHTML = MISSIONS.map((m, i) => {
+      const done = i < game.mission.done;
+      return `<div class="phone-row">${done ? '✓' : '·'} ${i + 1}. ${m.name} — $${m.reward} ${done ? '(done)' : ''}</div>`;
+    }).join('');
+  } else if (phoneTab === 'Stats') {
+    body.innerHTML = `<div class="phone-row">Cash <b>$${game.player.money.toLocaleString('en-US')}</b></div>
+      <div class="phone-row">Missions done <b>${game.mission.done} / 8</b></div>
+      <div class="phone-row">Respect level <b>${Math.min(5, 1 + game.mission.done)}</b></div>
+      <div class="phone-row">Wanted <b>${game.police.stars} ★</b></div>
+      <div class="phone-row">Health <b>${Math.round(game.player.hp)}%</b></div>`;
+  } else {
+    body.innerHTML = `<div class="phone-row"><b>WASD</b> move / drive</div>
+      <div class="phone-row"><b>Mouse</b> aim · Click shoot</div>
+      <div class="phone-row"><b>E</b> enter / steal car · <b>F</b> punch</div>
+      <div class="phone-row"><b>G</b> garage · <b>Enter</b> start job</div>
+      <div class="phone-row"><b>Tab</b> city map · <b>Esc</b> phone</div>
+      <div class="phone-row"><b>C</b> radio · <b>M</b> mute · <b>P</b> pause</div>`;
   }
 }
 
-function updateGarageMenu(game) {
-  const menu = $('garage-menu');
-  if (!menu) return;
-  if (!game.garage.open) { menu.style.display = 'none'; return; }
-  menu.style.display = 'block';
-  setText('garage-cash', 'Cash: $' + Math.round(game.player.money).toLocaleString('en-US'));
-  const list = $('garage-list');
-  if (list) {
-    let html = '';
-    GARAGE_UPGRADES.forEach((up, i) => {
-      const lvl = game.garage.owned[up.id] || 0;
-      const price = priceOf(up, game.garage.owned);
-      html += `<div class="g-item${i === game.garage.sel ? ' sel' : ''}"><b>${up.name} (Lv ${lvl}/${up.max})</b><span>${up.desc}</span><em>${price === null ? 'MAX' : '$' + price}</em></div>`;
-    });
-    if (cache['garage-list'] !== html) { cache['garage-list'] = html; list.innerHTML = html; }
-  }
+// ---------- garage menu ----------
+export function renderGarage(game) {
+  const g = game.garage;
+  $('garage-cash').textContent = `Cash: $${game.player.money.toLocaleString('en-US')}`;
+  const box = $('garage-items');
+  box.innerHTML = '';
+  GARAGE_UPGRADES.forEach((up, i) => {
+    const lvl = g.levels[up.id];
+    const div = document.createElement('div');
+    div.className = 'garage-item' + (i === g.selected ? ' sel' : '');
+    div.innerHTML = `<div><b>${up.name} (Lv ${lvl}/${up.max})</b><div class="garage-desc">${up.desc}</div></div>
+      <div class="garage-price">${lvl >= up.max ? 'MAX' : '$' + up.prices[lvl].toLocaleString('en-US')}</div>`;
+    box.appendChild(div);
+  });
+  $('garage-msg').textContent = game.garage.msg || '↑ ↓ select · Enter buy · G close · Upgrades stay on every car you steal';
 }
 
-export function showOverlay(id) {
-  for (const el of document.querySelectorAll('.overlay')) el.style.display = 'none';
-  const t = $(id);
-  if (t) t.style.display = 'flex';
+// ---------- title / center screens ----------
+export function showTitle(game, save) {
+  $('title-screen').classList.remove('hidden');
+  $('btn-continue').style.display = save ? '' : 'none';
+  if (save) $('continue-sub').textContent = `Day ${save.day}, $${save.money.toLocaleString('en-US')} · ${save.done}/8 jobs done`;
 }
+export function hideTitle() { $('title-screen').classList.add('hidden'); }
 
-export function hideOverlays() {
-  for (const el of document.querySelectorAll('.overlay')) el.style.display = 'none';
+export function showCenter(title, sub, hint) {
+  $('center-title').textContent = title;
+  $('center-sub').textContent = sub;
+  $('center-hint').textContent = hint;
+  $('center-screen').classList.remove('hidden');
 }
+export function hideCenter() { $('center-screen').classList.add('hidden'); }

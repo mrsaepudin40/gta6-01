@@ -1,108 +1,103 @@
-// 3D meshes: cars (box-built), pedestrians, police cars.
+// Model builders: box-built cars (with glass + wheels + lights), pedestrians,
+// police cars, helicopter. All original, low-poly.
 import * as THREE from 'three';
 import { PAL } from './config.js';
+import { pick } from './random.js';
 
-const wheelGeo = new THREE.CylinderGeometry(0.42, 0.42, 0.36, 10);
-const wheelMat = new THREE.MeshLambertMaterial({ color: 0x141414 });
+const CAR_COLORS = [0xe8b64c, 0xe05a5a, 0x5fb8a6, 0x7a9cc6, 0xf0e6d2, 0xc77dff, 0x37d67a, 0xff8fa3];
+const SPORT_COLORS = [0xff2e88, 0xffc93c, 0x54e0ff, 0xe05a5a];
 
-function box(w, h, d, color, x = 0, y = 0, z = 0) {
-  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshLambertMaterial({ color }));
-  m.position.set(x, y, z);
-  return m;
-}
-
-export function makeCarMesh(color, opts = {}) {
-  const g = new THREE.Group();
-  const sport = !!opts.sport;
-  const bodyH = sport ? 0.5 : 0.62;
-  const body = box(sport ? 2.1 : 2.0, bodyH, sport ? 4.6 : 4.2, color, 0, 0.55, 0);
-  g.add(body);
-  const cabin = box(1.7, 0.52, sport ? 2.0 : 2.1, 0x1a2028, 0, 0.55 + bodyH / 2 + 0.26, sport ? -0.2 : -0.1);
-  g.add(cabin);
+export function buildCar(color, sport = false) {
+  const car = new THREE.Group();
+  const bodyMat = new THREE.MeshStandardMaterial({ color, roughness: 0.35, metalness: 0.45 });
+  const glassMat = new THREE.MeshStandardMaterial({ color: 0x18242e, roughness: 0.15, metalness: 0.7 });
+  const body = new THREE.Mesh(new THREE.BoxGeometry(4.4, 1.5, 2.2), bodyMat);
+  body.position.y = 1.05; body.castShadow = true; car.add(body);
+  const cabin = new THREE.Mesh(new THREE.BoxGeometry(2.4, 1.1, 2.0), glassMat);
+  cabin.position.set(-0.2, 2.2, 0); cabin.castShadow = true; car.add(cabin);
+  const nose = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.8, 2.1), bodyMat);
+  nose.position.set(2.4, 0.85, 0); nose.castShadow = true; car.add(nose);
   if (sport) {
-    const spoiler = box(1.9, 0.09, 0.5, 0x141414, 0, 1.18, -2.1);
-    g.add(spoiler);
-    const strutL = box(0.08, 0.3, 0.08, 0x141414, -0.7, 1.0, -2.1);
-    const strutR = box(0.08, 0.3, 0.08, 0x141414, 0.7, 1.0, -2.1);
-    g.add(strutL, strutR);
+    const spoiler = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.25, 2.3), bodyMat);
+    spoiler.position.set(-2.4, 2.0, 0); car.add(spoiler);
+    const skirt = new THREE.Mesh(new THREE.BoxGeometry(4.6, 0.4, 2.35),
+      new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.6 }));
+    skirt.position.y = 0.45; car.add(skirt);
   }
-  // headlights + taillights
-  const hlMat = new THREE.MeshBasicMaterial({ color: 0xfff6c8 });
-  const tlMat = new THREE.MeshBasicMaterial({ color: 0xff2a2a });
-  for (const sx of [-0.65, 0.65]) {
-    const hl = box(0.42, 0.16, 0.06, 0xfff6c8, sx, 0.62, 2.12);
-    hl.material = hlMat; g.add(hl);
-    const tl = box(0.42, 0.16, 0.06, 0xff2a2a, sx, 0.62, -2.12);
-    tl.material = tlMat; g.add(tl);
+  // headlights + taillights (emissive so they read at sunset/night)
+  const hl = new THREE.MeshBasicMaterial({ color: 0xfff2b0 });
+  const tl = new THREE.MeshBasicMaterial({ color: 0xff2a2a });
+  for (const s of [-0.8, 0.8]) {
+    const h = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.4, 0.5), hl);
+    h.position.set(2.9, 1.0, s); car.add(h);
+    const t = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.4, 0.5), tl);
+    t.position.set(-2.25, 1.0, s); car.add(t);
   }
-  // wheels
   const wheels = [];
-  for (const [wx, wz] of [[-0.95, 1.4], [0.95, 1.4], [-0.95, -1.4], [0.95, -1.4]]) {
+  const wheelGeo = new THREE.CylinderGeometry(0.62, 0.62, 0.5, 12);
+  const wheelMat = new THREE.MeshStandardMaterial({ color: 0x141414, roughness: 0.9 });
+  for (const [wx, wz] of [[1.5, 1.05], [1.5, -1.05], [-1.5, 1.05], [-1.5, -1.05]]) {
     const w = new THREE.Mesh(wheelGeo, wheelMat);
-    w.rotation.z = Math.PI / 2;
-    w.position.set(wx, 0.42, wz);
-    g.add(w); wheels.push(w);
+    w.rotation.x = Math.PI / 2; w.position.set(wx, 0.62, wz); w.castShadow = true;
+    car.add(w); wheels.push(w);
   }
-  g.userData.wheels = wheels;
-  return g;
+  car.userData.wheels = wheels;
+  return car;
 }
 
-export function makeCopCarMesh() {
-  const g = makeCarMesh(PAL.copCar);
-  const bar = box(1.5, 0.22, 0.5, 0xffffff, 0, 1.32, -0.1);
-  g.add(bar);
-  const red = box(0.7, 0.24, 0.52, 0xff2222, -0.38, 1.32, -0.1);
-  red.material = new THREE.MeshBasicMaterial({ color: 0xff2222 });
-  const blue = box(0.7, 0.24, 0.52, 0x2244ff, 0.38, 1.32, -0.1);
-  blue.material = new THREE.MeshBasicMaterial({ color: 0x2244ff });
-  g.add(red, blue);
-  return g;
+export function randomCarColor(rng, sport = false) {
+  return pick(rng, sport ? SPORT_COLORS : CAR_COLORS);
 }
 
-export function makePedMesh(color, opts = {}) {
-  const g = new THREE.Group();
-  const skin = new THREE.MeshLambertMaterial({ color: 0xe8b88a });
-  const shirt = new THREE.MeshLambertMaterial({ color });
-  const pants = new THREE.MeshLambertMaterial({ color: 0x2a2f3a });
-  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.5, 1.05, 8), shirt);
-  body.position.y = 1.05;
-  g.add(body);
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.34, 10, 8), skin);
-  head.position.y = 1.85;
-  g.add(head);
-  const legL = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.55, 6), pants);
-  legL.position.set(-0.2, 0.28, 0);
-  const legR = legL.clone(); legR.position.x = 0.2;
-  g.add(legL, legR);
-  if (opts.cop) {
-    const hat = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.38, 0.16, 8), new THREE.MeshLambertMaterial({ color: 0x1a2a6b }));
-    hat.position.y = 2.12;
-    g.add(hat);
-  }
-  g.userData.legs = [legL, legR];
-  return g;
+export function buildPed(color) {
+  const p = new THREE.Group();
+  const shirt = new THREE.MeshStandardMaterial({ color, roughness: 0.8 });
+  const skin = new THREE.MeshStandardMaterial({ color: 0xe8b98a, roughness: 0.8 });
+  const pants = new THREE.MeshStandardMaterial({ color: 0x2a2a3a, roughness: 0.8 });
+  const body = new THREE.Mesh(new THREE.BoxGeometry(1.1, 1.6, 0.6), shirt);
+  body.position.y = 1.9; body.castShadow = true; p.add(body);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.55, 10, 8), skin);
+  head.position.y = 3.1; head.castShadow = true; p.add(head);
+  const legs = new THREE.Mesh(new THREE.BoxGeometry(0.9, 1.3, 0.55), pants);
+  legs.position.y = 0.65; p.add(legs);
+  p.userData.body = body;
+  return p;
 }
 
-export function makeHeliMesh() {
-  const g = new THREE.Group();
-  const body = box(2.6, 1.3, 5.2, PAL.copCar, 0, 0, 0);
-  g.add(body);
-  const nose = box(2.2, 1.0, 1.6, 0x1a2028, 0, -0.1, 2.8);
-  g.add(nose);
-  const tail = box(0.7, 0.7, 4.2, PAL.copCar, 0, 0.25, -4.4);
-  g.add(tail);
-  const fin = box(0.25, 1.6, 1.0, PAL.copCar, 0, 0.9, -6.2);
-  g.add(fin);
-  const mast = box(0.3, 0.6, 0.3, 0x141414, 0, 0.7, 0);
-  g.add(mast);
-  const rotor = box(11, 0.14, 0.7, 0x141414, 0, 1.0, 0);
-  g.add(rotor);
-  // spotlight beam: apex at the heli, base just at the ground below
-  // (heli hovers ~15u up — a 42u cone would stab through the ground)
-  const beamMat = new THREE.MeshBasicMaterial({ color: 0xfff2b0, transparent: true, opacity: 0.08, side: THREE.DoubleSide, depthWrite: false });
-  const beam = new THREE.Mesh(new THREE.ConeGeometry(5, 15, 16, 1, true), beamMat);
-  beam.position.set(0, -7.5, 0);
-  g.add(beam);
-  g.userData.rotor = rotor;
-  return g;
+export function buildCopCar() {
+  const car = buildCar(0xf2f2f2, false);
+  const stripe = new THREE.Mesh(new THREE.BoxGeometry(4.5, 0.35, 2.25),
+    new THREE.MeshStandardMaterial({ color: 0x2248c8, roughness: 0.5 }));
+  stripe.position.y = 1.35; car.add(stripe);
+  const barMat = new THREE.MeshBasicMaterial({ color: 0xff2a2a });
+  const barMat2 = new THREE.MeshBasicMaterial({ color: 0x2a6bff });
+  const b1 = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.3, 0.6), barMat);
+  b1.position.set(-0.2, 2.95, 0.55); car.add(b1);
+  const b2 = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.3, 0.6), barMat2);
+  b2.position.set(-0.2, 2.95, -0.55); car.add(b2);
+  car.userData.lightbar = [b1, b2];
+  return car;
+}
+
+export function buildHeli() {
+  const h = new THREE.Group();
+  const bodyMat = new THREE.MeshStandardMaterial({ color: 0x2248c8, roughness: 0.4, metalness: 0.3 });
+  const body = new THREE.Mesh(new THREE.BoxGeometry(7, 2.6, 3.2), bodyMat);
+  body.castShadow = true; h.add(body);
+  const glass = new THREE.Mesh(new THREE.BoxGeometry(2.4, 1.6, 2.8),
+    new THREE.MeshStandardMaterial({ color: 0x18242e, roughness: 0.15, metalness: 0.7 }));
+  glass.position.set(3.6, -0.2, 0); h.add(glass);
+  const tail = new THREE.Mesh(new THREE.BoxGeometry(6, 0.9, 0.9), bodyMat);
+  tail.position.set(-6, 0.6, 0); h.add(tail);
+  const fin = new THREE.Mesh(new THREE.BoxGeometry(0.6, 2.4, 0.4), bodyMat);
+  fin.position.set(-8.8, 1.6, 0); h.add(fin);
+  const rotorMat = new THREE.MeshBasicMaterial({ color: 0x222222, transparent: true, opacity: 0.55 });
+  const rotor = new THREE.Mesh(new THREE.BoxGeometry(15, 0.15, 1.1), rotorMat);
+  rotor.position.y = 2.0; h.add(rotor);
+  const rotor2 = rotor.clone(); rotor2.rotation.y = Math.PI / 2; h.add(rotor2);
+  const spot = new THREE.Mesh(new THREE.ConeGeometry(9, 42, 12, 1, true),
+    new THREE.MeshBasicMaterial({ color: 0xfff2b0, transparent: true, opacity: 0.16, side: THREE.DoubleSide, depthWrite: false }));
+  spot.rotation.x = Math.PI; spot.position.y = -22; h.add(spot);
+  h.userData.rotors = [rotor, rotor2];
+  return h;
 }
