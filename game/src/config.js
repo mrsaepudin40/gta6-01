@@ -88,16 +88,65 @@ export const MISSIONS = [
     ],
   },
   {
+    name: 'Cold Chain',
+    giver: 'Mara (fixer)',
+    briefing: 'Mara has cargo that cannot wait. Pick it up at the Old Docks and run it to Sunset Beach before the ice melts — 90 seconds.',
+    reward: 500,
+    dialog: [
+      ['Mara', 'The cargo is ice-cold and the clock is ticking.'],
+      ['Jax', 'Ninety seconds. I can do ninety seconds.'],
+    ],
+  },
+  {
+    name: 'Hot Plates',
+    giver: 'Benny (garage)',
+    briefing: "Benny needs a sports car with clean plates. Steal a sports car and bring it to Benny's Garage.",
+    reward: 700,
+    dialog: [
+      ['Benny', 'Bring me a sports car, Jax. A fast one.'],
+      ['Jax', 'Sports car. Benny\u2019s Garage. Got it.'],
+    ],
+  },
+  {
+    name: 'Night Shift',
+    giver: 'Mara (fixer)',
+    briefing: 'Three stashes are hidden around the bay. Collect them all after dark — and stay quiet.',
+    reward: 800,
+    dialog: [
+      ['Mara', 'Three stashes, one night. No noise.'],
+      ['Jax', 'Quiet as the tide.'],
+    ],
+  },
+  {
+    name: 'The Last Bridge',
+    giver: 'Mara (fixer)',
+    briefing: 'Four stars and the whole bay behind you. Lose the heat and cross Sunset Bridge — 90 seconds.',
+    reward: 1000,
+    dialog: [
+      ['Mara', 'Four stars, Jax. Cross the bridge and vanish.'],
+      ['Jax', 'If the bridge is open, I am gone.'],
+    ],
+  },
+  {
     name: 'Showdown at the Docks',
     giver: 'Mara (fixer)',
     briefing: "Rico's crew is waiting at the docks, and Rico himself. Take them all down and Solmar Bay is yours.",
-    reward: 1000,
+    reward: 1500,
     dialog: [
       ['Mara', "Rico's crew owns the docks. End it tonight."],
       ['Jax', 'Tonight the docks change owners.'],
     ],
   },
 ];
+
+// Benny's Garage upgrades: each level costs the next price in the list.
+export const UPGRADES = {
+  engine: { name: 'Engine Mk II', desc: '+12% top speed & accel per level', prices: [500, 800, 1200], max: 3 },
+  armor: { name: 'Armor Plating', desc: '+50 max car HP, -20% damage per level', prices: [400, 700, 1000], max: 3 },
+  service: { name: 'Full Service', desc: 'Repair your car to full health', prices: [250], max: 1 },
+};
+
+export const RADIO_STATIONS = ['SOLMAR FM 98.4', 'BAY FM 101.2', 'SUNSET 87.9'];
 
 export const CAR_KINDS = {
   sedan: { color: '#c94f43', max: 440, accel: 320 },

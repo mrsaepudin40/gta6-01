@@ -9,10 +9,14 @@ export function loadSave() {
     if (typeof s !== 'object' || !s) return null;
     return {
       money: Math.max(0, s.money | 0),
-      mission: Math.max(0, Math.min(3, s.mission | 0)),
+      mission: Math.max(0, Math.min(7, s.mission | 0)),
       completed: !!s.completed,
       bestWanted: Math.max(0, Math.min(5, s.bestWanted | 0)),
       muted: !!s.muted,
+      upgrades: {
+        engine: Math.max(0, Math.min(3, (s.upgrades && s.upgrades.engine) | 0)),
+        armor: Math.max(0, Math.min(3, (s.upgrades && s.upgrades.armor) | 0)),
+      },
     };
   } catch { return null; }
 }
@@ -25,6 +29,7 @@ export function writeSave(game) {
       completed: game.mission.completed,
       bestWanted: game.bestWanted,
       muted: game.muted,
+      upgrades: { engine: game.upgrades.engine, armor: game.upgrades.armor },
     }));
   } catch { /* storage unavailable: play without saving */ }
 }

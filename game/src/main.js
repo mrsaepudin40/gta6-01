@@ -12,6 +12,7 @@ import { fireBullet, punch, updateBullets, updateParticles, updateEnemies, hurtP
 import { drawHUD, drawTitle, drawOverlay, titleMenuHit } from './hud.js';
 import { loadSave, writeSave } from './save.js';
 import { applyShot } from './shots.js';
+import { garageNear, openGarage, closeGarage, buySelected, garageRowHit, drawGarage } from './garage.js';
 
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
@@ -45,6 +46,14 @@ const game = {
   lastShot: null,
   bestWanted: 0,
   save: loadSave(),
+  clockDay: 1,
+  clockMins: 17 * 60,
+  night: false,
+  radioIdx: 0,
+  upgrades: { engine: 0, armor: 0 },
+  garageSel: 0,
+  garageMsg: '',
+  resultBanner: null,
 };
 
 function resetRun(keepMoney) {
@@ -62,6 +71,9 @@ function resetRun(keepMoney) {
   game.mission = newMissionState();
   game.pickups = spawnPickups();
   game.cam.x = 1000; game.cam.y = 600;
+  game.night = false;
+  game.resultBanner = null;
+  game.garageMsg = '';
 }
 
 function spawnParked() {
@@ -91,11 +103,17 @@ function spawnPickups() {
     const road = game.rng.pick(game.world.roadsY);
     out.push({ x: game.rng.range(200, 2600), y: road + game.rng.pick([-30, 30]), kind: 'health', taken: false });
   }
+  for (let i = 0; i < 2; i++) {
+    const road = game.rng.pick(game.world.roadsX);
+    out.push({ x: road + game.rng.pick([-30, 30]), y: game.rng.range(200, 2200), kind: 'ammo', taken: false });
+  }
   return out;
 }
 
 function newGame() {
   resetRun(false);
+  game.upgrades = { engine: 0, armor: 0 };
+  game.clockDay = 1; game.clockMins = 17 * 60;
   game.state = 'playing';
   startMission(game, 0);
   audio.ensure(); audio.click();
@@ -107,10 +125,11 @@ function continueGame() {
   if (s) {
     game.player.money = s.money;
     game.muted = s.muted;
+    game.upgrades = s.upgrades || { engine: 0, armor: 0 };
     audio.setMuted(s.muted);
   }
   game.state = 'playing';
-  startMission(game, s ? Math.min(3, s.mission) : 0);
+  startMission(game, s ? Math.min(7, s.mission) : 0);
   audio.ensure(); audio.click();
 }
 
@@ -125,7 +144,7 @@ function respawn() {
   game.cops = []; game.copCars = [];
   game.player.money = money;
   game.state = 'playing';
-  if (!game.mission.completed) startMission(game, Math.min(3, m));
+  if (!game.mission.completed) startMission(game, Math.min(7, m));
 }
 
 function nearestCar(maxD) {
@@ -144,6 +163,9 @@ function enterCar(car) {
   p.inCar = car;
   car.driver = 'player';
   car.speed = 0;
+  // Benny's touch: your car is now armored to the level you paid for.
+  car.maxHp = 100 + 50 * game.upgrades.armor;
+  car.hp = car.maxHp;
   if (car.wasTraffic) { /* carjacked from traffic */ }
   addHeat(game, 15);
   say(game, 'Jax', car.driver === 'player' ? 'This one will do.' : '', 1.5);
@@ -165,6 +187,9 @@ function exitCar() {
 
 function update(dt) {
   game.time += dt;
+  // In-game clock: one game minute every two real seconds.
+  game.clockMins += dt * 0.5;
+  if (game.clockMins >= 1440) { game.clockMins -= 1440; game.clockDay += 1; }
   const p = game.player;
   p.fireCd = Math.max(0, p.fireCd - dt);
   p.punchCd = Math.max(0, p.punchCd - dt);
@@ -175,6 +200,8 @@ function update(dt) {
   p.aim = angleTo(p.x, p.y, wx, wy);
 
   if (input.hit('KeyM')) { game.muted = !game.muted; audio.setMuted(game.muted); }
+  if (input.hit('KeyC')) { game.radioIdx = (game.radioIdx + 1) % 3; audio.radioBlip(); }
+  if (input.hit('KeyG') && garageNear(game)) { openGarage(game); return; }
   if (input.hit('KeyP', 'Escape')) { game.state = 'paused'; return; }
   if (input.hit('KeyR')) { respawn(); return; }
 
@@ -194,6 +221,8 @@ function update(dt) {
 
   if (p.inCar) {
     const car = p.inCar;
+    // Garage engine upgrade raises this car's top speed.
+    car.max = car.baseMax * (1 + 0.12 * game.upgrades.engine);
     const gas = game.shotDrive ? 1 : (input.down('KeyW', 'ArrowUp') ? 1 : 0);
     const brake = game.shotDrive ? 0 : (input.down('KeyS', 'ArrowDown') ? 1 : 0);
     const steer = game.shotDrive ? 0 : ((input.down('KeyD', 'ArrowRight') ? 1 : 0) - (input.down('KeyA', 'ArrowLeft') ? 1 : 0));
@@ -271,6 +300,7 @@ function update(dt) {
     if (dist(p.x, p.y, pk.x, pk.y) < 30) {
       pk.taken = true;
       if (pk.kind === 'cash') { p.money += 50; say(game, 'Jax', '+$50 found on the street.', 1.6); }
+      else if (pk.kind === 'ammo') { p.ammoRes = Math.min(96, p.ammoRes + 24); say(game, 'Jax', 'Ammo restocked. +24.', 1.6); }
       else { p.hp = Math.min(100, p.hp + 30); say(game, 'Jax', 'Patched up. +30 health.', 1.6); }
       audio.pickup();
     }
@@ -320,13 +350,27 @@ function render() {
   // Pickups.
   for (const pk of game.pickups) {
     if (pk.taken) continue;
-    ctx.fillStyle = pk.kind === 'cash' ? '#37d67a' : '#ff5a5a';
+    ctx.fillStyle = pk.kind === 'cash' ? '#37d67a' : pk.kind === 'ammo' ? '#ffd23f' : '#ff5a5a';
     ctx.beginPath(); ctx.arc(pk.x, pk.y, 9, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#fff';
     ctx.font = 'bold 11px system-ui, sans-serif';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(pk.kind === 'cash' ? '$' : '+', pk.x, pk.y);
+    ctx.fillText(pk.kind === 'cash' ? '$' : pk.kind === 'ammo' ? 'A' : '+', pk.x, pk.y);
     ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  }
+  // Benny's Garage beacon (permanent, orange).
+  {
+    const g = game.world.markers.garage;
+    const pulse = 20 + Math.sin(game.time * 3) * 4;
+    ctx.strokeStyle = '#ff9f1c'; ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(g.x, g.y, pulse, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,159,28,0.2)';
+    ctx.beginPath(); ctx.arc(g.x, g.y, pulse - 6, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#ff9f1c';
+    ctx.font = 'bold 13px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText("BENNY'S GARAGE", g.x, g.y - pulse - 8);
+    ctx.textAlign = 'left';
   }
   // Mission marker beacon.
   if (game.mission.marker) {
@@ -364,11 +408,25 @@ function render() {
   ctx.globalAlpha = 1;
   ctx.restore();
 
+  // Night: dark overlay with a pool of light around the player.
+  if (game.night && game.state !== 'title') {
+    ctx.fillStyle = 'rgba(6,8,32,0.30)';
+    ctx.fillRect(0, 0, CFG.VIEW_W, CFG.VIEW_H);
+    const spx = p.x - game.cam.x + CFG.VIEW_W / 2;
+    const spy = p.y - game.cam.y + CFG.VIEW_H / 2;
+    const lg = ctx.createRadialGradient(spx, spy, 90, spx, spy, 430);
+    lg.addColorStop(0, 'rgba(6,8,32,0)');
+    lg.addColorStop(1, 'rgba(6,8,32,0.5)');
+    ctx.fillStyle = lg;
+    ctx.fillRect(0, 0, CFG.VIEW_W, CFG.VIEW_H);
+  }
+
   drawHUD(ctx, game);
-  if (game.state === 'paused') drawOverlay(ctx, 'PAUSED', 'Take a breath. The bay will wait.', '#ffd23f');
+  if (game.state === 'garage') drawGarage(ctx, game);
+  else if (game.state === 'paused') drawOverlay(ctx, 'PAUSED', 'Take a breath. The bay will wait.', '#ffd23f');
   else if (game.state === 'busted') drawOverlay(ctx, 'BUSTED', 'The law caught up with Jax. -$100 bail.');
   else if (game.state === 'wasted') drawOverlay(ctx, 'WASTED', 'Jax is down. The bay keeps moving.');
-  else if (game.state === 'complete') drawOverlay(ctx, 'SOLMAR BAY IS YOURS', 'All four jobs done. Rico is finished. $1,000 richer.', '#37d67a');
+  else if (game.state === 'complete') drawOverlay(ctx, 'SOLMAR BAY IS YOURS', 'All eight jobs done. Rico is finished. $5,700 richer.', '#37d67a');
 }
 
 let last = performance.now();
@@ -390,6 +448,18 @@ function frame(now) {
     audio.ensure();
   } else if (game.state === 'playing') {
     update(dt);
+  } else if (game.state === 'garage') {
+    if (input.hit('KeyG', 'Escape')) closeGarage(game);
+    else if (input.hit('ArrowUp', 'KeyW')) { game.garageSel = (game.garageSel + 2) % 3; audio.click(); }
+    else if (input.hit('ArrowDown', 'KeyS')) { game.garageSel = (game.garageSel + 1) % 3; audio.click(); }
+    else if (input.hit('Enter')) buySelected(game);
+    else if (input.mouse.clicked) {
+      const row = garageRowHit(input.mouse.x, input.mouse.y);
+      if (row >= 0) {
+        if (game.garageSel === row) buySelected(game);
+        else { game.garageSel = row; audio.click(); }
+      }
+    }
   } else if (game.state === 'paused') {
     if (input.hit('KeyP', 'Escape')) game.state = 'playing';
     if (input.hit('KeyR')) respawn();

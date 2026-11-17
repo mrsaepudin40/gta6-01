@@ -8,6 +8,16 @@ import { addHeat } from './police.js';
 export function fireBullet(game) {
   const p = game.player;
   if (p.inCar || p.fireCd > 0 || game.state !== 'playing') return;
+  if (p.ammoMag <= 0) {
+    if (p.ammoRes > 0) {
+      const take = Math.min(12, p.ammoRes);
+      p.ammoRes -= take; p.ammoMag = take;
+      p.fireCd = 0.9;
+      audio.click();
+    }
+    return;
+  }
+  p.ammoMag -= 1;
   p.fireCd = CFG.FIRE_RATE;
   const a = p.aim;
   game.bullets.push({
@@ -85,6 +95,8 @@ export function updateBullets(game, dt) {
 }
 
 export function damageCar(game, car, n) {
+  // Armor plating protects the player's car.
+  if (car === game.player.inCar) n *= (1 - 0.2 * game.upgrades.armor);
   car.hp -= n;
   if (car.hp <= 0 && !car.dead) {
     car.dead = true;

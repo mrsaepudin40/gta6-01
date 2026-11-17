@@ -55,6 +55,7 @@ export const audio = {
   jingle() { [523, 659, 784, 1046].forEach((f, i) => setTimeout(() => this.blip(f, 0.16, 'triangle', 0.18), i * 110)); },
   busted() { this.blip(220, 0.5, 'sawtooth', 0.18, -120); },
   click() { this.blip(880, 0.05, 'sine', 0.1); },
+  radioBlip() { this.blip(520, 0.06, 'sine', 0.1); setTimeout(() => this.blip(780, 0.08, 'sine', 0.1), 70); },
   engine(speed01, on) {
     if (!this.ctx || this.muted) return;
     if (!this.engineOsc) {

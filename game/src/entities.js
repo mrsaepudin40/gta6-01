@@ -8,14 +8,15 @@ export function makePlayer(x, y) {
     x, y, angle: -Math.PI / 2, hp: CFG.PLAYER_HP, money: 0,
     speed: 0, inCar: null, aim: 0, fireCd: 0, punchCd: 0, invuln: 0,
     walkPhase: 0, moving: false,
+    ammoMag: 12, ammoRes: 24,
   };
 }
 
 export function makeCar(x, y, angle, kind, driver) {
   const k = CAR_KINDS[kind] || CAR_KINDS.sedan;
   return {
-    x, y, angle, speed: 0, hp: 100, kind, driver,
-    color: k.color, max: k.max, accel: k.accel,
+    x, y, angle, speed: 0, hp: 100, maxHp: 100, kind, driver,
+    color: k.color, max: k.max, baseMax: k.max, accel: k.accel,
     smoke: 0, dead: false, brake: false, siren: kind === 'police',
   };
 }

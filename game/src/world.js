@@ -38,6 +38,12 @@ export function genWorld(seed) {
       hideout: { x: 2200, y: 2200, label: 'Hideout' },
       hospital: { x: 1400, y: 600, label: 'Hospital' },
       package: { x: 2720, y: 1000, label: 'Package' },
+      garage: { x: 1800, y: 1400, label: "Benny's Garage" },
+      beach: { x: 2960, y: 1400, label: 'Sunset Beach' },
+      bridge: { x: 2600, y: 200, label: 'Sunset Bridge' },
+      stashA: { x: 600, y: 600, label: 'Stash 1/3' },
+      stashB: { x: 2200, y: 600, label: 'Stash 2/3' },
+      stashC: { x: 1000, y: 1800, label: 'Stash 3/3' },
     },
   };
   world.minimap = buildMinimap(world);
