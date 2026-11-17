@@ -274,6 +274,9 @@ function loop() {
       if (edge.has('Enter') && !game.mission.started && !game.mission.completed) startMission(game, 0);
       if (edge.has('KeyF')) tryPunch(game);
       if (consumeClick()) tryShoot(game);
+      // shot mode: Jax fires on a loop so the capture always catches
+      // tracer + muzzle flash mid-burst
+      if (game.shotMode === 'shootout') tryShoot(game);
       // movement
       if (p.inCar) {
         // shot mode: auto-drive the chase so the cover shows speed

@@ -218,5 +218,66 @@ export function applyShot(game, name, seed) {
     p.mesh.position.set(-720, 0, 300);
     game.garage.open = true;
     game.garage.sel = 1;
+  } else if (name === 'shootout') {
+    // Public daytime shootout: Jax on foot trading fire with Rico's crew
+    // behind police-car cover, pedestrians fleeing, traffic pulled over.
+    // Mission 8 (Showdown) banner + Mara dialogue. Variant via seed:
+    // wide (default) / close / plaza. The crew holds cover with huge HP
+    // (Jax cannot kill them mid-capture) and the mission stays stage 0
+    // (docks marker is ~2000u away), so the frame never completes/fails.
+    const layouts = {
+      wide: {
+        jax: [400, -550, Math.PI],
+        cops: [[378, -588, 2.6], [424, -592, 3.7], [400, -612, Math.PI]],
+        crew: [[400, -584, 0], [382, -596, 0.37], [418, -596, -0.37]],
+        peds: [[375, -580], [390, -585], [410, -578], [425, -590], [370, -610], [430, -615], [395, -620], [415, -605]],
+        stopped: [[360, -590, 0.5, 0xe8e3d8], [440, -600, -0.4, 0x9b7ec6]],
+      },
+      close: {
+        jax: [400, -560, Math.PI],
+        cops: [[380, -580, 2.6], [420, -582, 3.7], [400, -596, Math.PI]],
+        crew: [[400, -578, 0], [384, -586, 0.37], [416, -586, -0.37]],
+        peds: [[378, -572], [392, -576], [408, -570], [422, -578], [376, -592], [424, -594], [396, -598], [412, -592]],
+        stopped: [[362, -582, 0.5, 0xe8e3d8], [438, -592, -0.4, 0x9b7ec6]],
+      },
+      plaza: {
+        jax: [0, -400, 2.4],
+        cops: [[-18, -430, 2.0], [20, -428, 3.0], [0, -445, 2.4]],
+        crew: [[0, -424, -0.74], [-14, -436, -0.4], [16, -436, -1.1]],
+        peds: [[-22, -418], [-10, -412], [12, -410], [24, -420], [-26, -438], [26, -440], [-6, -446], [8, -442]],
+        stopped: [[-30, -425, 0.3, 0xf2c230], [32, -432, -0.3, 0x3fa7d6]],
+      },
+    };
+    const L = layouts[seed] || layouts.wide;
+    game.state = 'playing';
+    p.money = 3200;
+    setClock(game, 1, 16, 30);
+    p.x = L.jax[0]; p.z = L.jax[1]; p.heading = L.jax[2];
+    p.mesh.position.set(p.x, 0, p.z);
+    game.police.heat = 60;
+    spawnHeliNow(game);
+    startMission(game, 7);
+    game.combat.ammo = 8; game.combat.reserve = 60;
+    for (const [x, z, h] of L.cops) addCop(game, x, z, h, 0);
+    for (const [x, z, h] of L.crew) {
+      const mesh = makePedMesh(0x8b1e1e);
+      mesh.position.set(x, 0, z);
+      game.scene.add(mesh);
+      game.enemies.push({ x, z, heading: h, hp: 10000, maxHp: 10000, boss: false, mesh, shootT: 0.2, dead: false, hold: true });
+    }
+    // fleeing pedestrians staged around the firefight (Jax's shots keep
+    // refreshing gunshotAt, so they keep running away from him)
+    game.traffic.peds.slice(0, 8).forEach((ped, i) => {
+      const [x, z] = L.peds[i];
+      ped.x = x; ped.z = z; ped.fleeT = 3;
+      ped.mesh.position.set(x, 0, z);
+    });
+    // stopped traffic pulled over at the roadside
+    for (const [x, z, h, color] of L.stopped) {
+      const mesh = makeCarMesh(color);
+      mesh.position.set(x, 0, z);
+      mesh.rotation.y = h;
+      game.scene.add(mesh);
+    }
   }
 }

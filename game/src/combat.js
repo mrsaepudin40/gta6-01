@@ -14,9 +14,26 @@ export function makeCombat(scene) {
   scene.add(tracer);
   const flash = new THREE.PointLight(0xffe066, 0, 18);
   scene.add(flash);
+  // Visible muzzle-flash shape: a point light alone does not read as a
+  // burst in a still frame (day sun washes it out), so add a bright cone
+  // at the muzzle that is shown while the tracer is visible.
+  const flashGeo = new THREE.ConeGeometry(0.32, 1.2, 8);
+  flashGeo.rotateX(Math.PI / 2); // point along +Z, then yaw by heading
+  const flashMesh = new THREE.Mesh(flashGeo, new THREE.MeshBasicMaterial({ color: 0xffe066 }));
+  flashMesh.visible = false;
+  scene.add(flashMesh);
+  // Enemy return fire: one shared tracer + light, re-aimed per shot.
+  const enemyTracerMat = new THREE.LineBasicMaterial({ color: 0xff9f43, transparent: true, opacity: 0.9 });
+  const enemyTracerGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
+  const enemyTracer = new THREE.Line(enemyTracerGeo, enemyTracerMat);
+  enemyTracer.visible = false;
+  scene.add(enemyTracer);
+  const enemyFlash = new THREE.PointLight(0xff9f43, 0, 14);
+  scene.add(enemyFlash);
   return {
     ammo: 12, reserve: 24, cooldown: 0, punchT: 0,
-    tracer, tracerT: 0, flash,
+    tracer, tracerT: 0, flash, flashMesh,
+    enemyTracer, enemyTracerT: 0, enemyFlash,
   };
 }
 
@@ -31,7 +48,9 @@ function muzzlePos(game) {
 export function tryShoot(game) {
   const c = game.combat;
   if (c.cooldown > 0 || game.state !== 'playing') return;
-  if (c.ammo <= 0) { c.ammo = 12; c.reserve = Math.max(0, c.reserve - 12); c.cooldown = 0.6; audio.denied(); return; }
+  // Shootout scene: partial-mag reloads keep the HUD ammo visibly reduced
+  // (8 instead of 12) for the whole capture window.
+  if (c.ammo <= 0) { c.ammo = game.shotMode === 'shootout' ? 8 : 12; c.reserve = Math.max(0, c.reserve - 12); c.cooldown = 0.6; audio.denied(); return; }
   c.ammo -= 1;
   c.cooldown = CFG.FIRE_RATE;
   audio.shot();
@@ -55,16 +74,24 @@ export function tryShoot(game) {
   pos.setXYZ(1, end.x, 1.2, end.z);
   pos.needsUpdate = true;
   c.tracer.visible = true;
-  c.tracerT = 0.07;
+  // Shootout scene: tracer + flash outlast the fire interval (0.18s), so a
+  // still frame taken at any moment catches the gunfire mid-burst.
+  c.tracerT = game.shotMode === 'shootout' ? 0.4 : 0.07;
   c.flash.position.set(m.x, m.y, m.z);
   c.flash.intensity = 60;
+  c.flashMesh.position.set(m.x + dir.x * 1.5, 1.25, m.z + dir.z * 1.5);
+  c.flashMesh.rotation.y = m.heading;
+  c.flashMesh.scale.setScalar(0.6 + Math.random() * 0.3);
+  c.flashMesh.visible = true;
   if (best) {
     // scare nearby peds
     game.gunshotAt = { x: end.x, z: end.z };
     game.gunshotT = 0.1;
   }
   if (bestEnemy) damageEnemy(game, bestEnemy, CFG.SHOT_DMG);
-  game.addHeat && game.addHeat(6);
+  // Shootout scene: heat is pinned at 3 stars by updatePolice, so shots
+  // must not push it up (that would also spawn extra cop cars).
+  if (game.shotMode !== 'shootout') game.addHeat && game.addHeat(6);
 }
 
 export function tryPunch(game) {
@@ -93,8 +120,13 @@ export function updateCombat(game, dt) {
   const c = game.combat;
   if (c.cooldown > 0) c.cooldown -= dt;
   if (c.punchT > 0) c.punchT -= dt;
-  if (c.tracerT > 0) { c.tracerT -= dt; if (c.tracerT <= 0) c.tracer.visible = false; }
-  if (c.flash.intensity > 0) c.flash.intensity = Math.max(0, c.flash.intensity - dt * 900);
+  if (c.tracerT > 0) { c.tracerT -= dt; if (c.tracerT <= 0) { c.tracer.visible = false; c.flashMesh.visible = false; } }
+  // Shootout scene: flash decays slower than the fire interval, so the
+  // muzzle burst is lit in every captured frame.
+  const decay = game.shotMode === 'shootout' ? 200 : 900;
+  if (c.flash.intensity > 0) c.flash.intensity = Math.max(0, c.flash.intensity - dt * decay);
+  if (c.enemyTracerT > 0) { c.enemyTracerT -= dt; if (c.enemyTracerT <= 0) c.enemyTracer.visible = false; }
+  if (c.enemyFlash.intensity > 0) c.enemyFlash.intensity = Math.max(0, c.enemyFlash.intensity - dt * (game.shotMode === 'shootout' ? 150 : 900));
 }
 
 // ---- Showdown enemies (Rico's crew + boss) ----
@@ -137,8 +169,9 @@ export function updateEnemies(game, dt) {
     if (e.dead) continue;
     if (e.hp <= 0) { killEnemy(game, e); continue; }
     const d = dist2d(e.x, e.z, px, pz);
-    // walk toward the player, stop at punching range
-    if (d > 3) {
+    // walk toward the player, stop at punching range — unless hold is set
+    // (shootout scene: the crew stays behind police-car cover).
+    if (!e.hold && d > 3) {
       const want = Math.atan2(px - e.x, pz - e.z);
       e.heading = want;
       const sp = e.boss ? 3.0 : 3.8;
@@ -146,10 +179,26 @@ export function updateEnemies(game, dt) {
       e.z += Math.cos(want) * sp * dt;
     }
     e.shootT -= dt;
-    if (d < 22 && e.shootT <= 0) {
-      e.shootT = e.boss ? 1.4 : 2.0;
-      p.hp -= e.boss ? 6 : 4;
+    // Shootout scene: the crew fires from cover at bullet range (not just
+    // 22u), faster, with a visible tracer — but soft damage so Jax cannot
+    // be WASTED mid-capture.
+    const range = game.shotMode === 'shootout' ? CFG.BULLET_RANGE : 22;
+    if (d < range && e.shootT <= 0) {
+      e.shootT = game.shotMode === 'shootout' ? 0.9 : (e.boss ? 1.4 : 2.0);
+      p.hp -= game.shotMode === 'shootout' ? 2 : (e.boss ? 6 : 4);
       audio.shot();
+      if (game.shotMode === 'shootout') {
+        const c = game.combat;
+        const mx = e.x + Math.sin(e.heading) * 2, mz = e.z + Math.cos(e.heading) * 2;
+        const pos = c.enemyTracer.geometry.attributes.position;
+        pos.setXYZ(0, mx, 1.5, mz);
+        pos.setXYZ(1, px, 1.2, pz);
+        pos.needsUpdate = true;
+        c.enemyTracer.visible = true;
+        c.enemyTracerT = 0.5;
+        c.enemyFlash.position.set(mx, 1.5, mz);
+        c.enemyFlash.intensity = 40;
+      }
       game.addHeat && game.addHeat(2);
     }
     if (e.mesh) { e.mesh.position.set(e.x, 0, e.z); e.mesh.rotation.y = e.heading; }

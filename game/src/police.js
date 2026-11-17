@@ -37,6 +37,9 @@ export function updatePolice(game, dt) {
   const stars = starsOf(pol.heat);
   // heat slowly decays when no crime recently
   pol.heat = Math.max(0, pol.heat - dt * (stars === 0 ? 0 : 0.9));
+  // Shootout scene: pin exactly 3 stars (heat decay would drop it to 2,
+  // and Jax's shots must not push it up and spawn extra cop cars).
+  if (game.shotMode === 'shootout') pol.heat = 60;
   const want = stars === 0 ? 0 : Math.min(CFG.COP_MAX_CARS, stars);
   while (pol.cars.length < want) spawnCopCar(game);
   while (pol.cars.length > want) {
@@ -53,6 +56,16 @@ export function updatePolice(game, dt) {
       c.speed = pSpeed;
       c.x += Math.sin(c.heading) * c.speed * dt;
       c.z += Math.cos(c.heading) * c.speed * dt;
+      if (c.mesh) { c.mesh.position.set(c.x, 0, c.z); c.mesh.rotation.y = c.heading; }
+    }
+    audio.siren(true);
+    audio.updateSiren(dt);
+    return;
+  }
+  // Shot mode: cops hold their cover positions for the shootout scene —
+  // no driving in, no BUSTED (the frame must stay a firefight).
+  if (game.shotMode === 'shootout') {
+    for (const c of pol.cars) {
       if (c.mesh) { c.mesh.position.set(c.x, 0, c.z); c.mesh.rotation.y = c.heading; }
     }
     audio.siren(true);
