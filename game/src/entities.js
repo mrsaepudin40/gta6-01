@@ -1,152 +1,84 @@
-// Player, cars and pedestrians: creation, physics and drawing.
-import { CFG, CAR_KINDS, PAL } from './config.js';
-import { clamp } from './random.js';
-import { collideCircle, clampToWorld } from './world.js';
+// 3D meshes: cars (box-built), pedestrians, police cars.
+import * as THREE from 'three';
+import { PAL } from './config.js';
 
-export function makePlayer(x, y) {
-  return {
-    x, y, angle: -Math.PI / 2, hp: CFG.PLAYER_HP, money: 0,
-    speed: 0, inCar: null, aim: 0, fireCd: 0, punchCd: 0, invuln: 0,
-    walkPhase: 0, moving: false,
-    ammoMag: 12, ammoRes: 24,
-  };
+const wheelGeo = new THREE.CylinderGeometry(0.42, 0.42, 0.36, 10);
+const wheelMat = new THREE.MeshLambertMaterial({ color: 0x141414 });
+
+function box(w, h, d, color, x = 0, y = 0, z = 0) {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), new THREE.MeshLambertMaterial({ color }));
+  m.position.set(x, y, z);
+  return m;
 }
 
-export function makeCar(x, y, angle, kind, driver) {
-  const k = CAR_KINDS[kind] || CAR_KINDS.sedan;
-  return {
-    x, y, angle, speed: 0, hp: 100, maxHp: 100, kind, driver,
-    color: k.color, max: k.max, baseMax: k.max, accel: k.accel,
-    smoke: 0, dead: false, brake: false, siren: kind === 'police',
-  };
+export function makeCarMesh(color, opts = {}) {
+  const g = new THREE.Group();
+  const sport = !!opts.sport;
+  const bodyH = sport ? 0.5 : 0.62;
+  const body = box(sport ? 2.1 : 2.0, bodyH, sport ? 4.6 : 4.2, color, 0, 0.55, 0);
+  g.add(body);
+  const cabin = box(1.7, 0.52, sport ? 2.0 : 2.1, 0x1a2028, 0, 0.55 + bodyH / 2 + 0.26, sport ? -0.2 : -0.1);
+  g.add(cabin);
+  if (sport) {
+    const spoiler = box(1.9, 0.09, 0.5, 0x141414, 0, 1.18, -2.1);
+    g.add(spoiler);
+    const strutL = box(0.08, 0.3, 0.08, 0x141414, -0.7, 1.0, -2.1);
+    const strutR = box(0.08, 0.3, 0.08, 0x141414, 0.7, 1.0, -2.1);
+    g.add(strutL, strutR);
+  }
+  // headlights + taillights
+  const hlMat = new THREE.MeshBasicMaterial({ color: 0xfff6c8 });
+  const tlMat = new THREE.MeshBasicMaterial({ color: 0xff2a2a });
+  for (const sx of [-0.65, 0.65]) {
+    const hl = box(0.42, 0.16, 0.06, 0xfff6c8, sx, 0.62, 2.12);
+    hl.material = hlMat; g.add(hl);
+    const tl = box(0.42, 0.16, 0.06, 0xff2a2a, sx, 0.62, -2.12);
+    tl.material = tlMat; g.add(tl);
+  }
+  // wheels
+  const wheels = [];
+  for (const [wx, wz] of [[-0.95, 1.4], [0.95, 1.4], [-0.95, -1.4], [0.95, -1.4]]) {
+    const w = new THREE.Mesh(wheelGeo, wheelMat);
+    w.rotation.z = Math.PI / 2;
+    w.position.set(wx, 0.42, wz);
+    g.add(w); wheels.push(w);
+  }
+  g.userData.wheels = wheels;
+  return g;
 }
 
-export function makePed(x, y, armed = false) {
-  return {
-    x, y, angle: Math.random() * Math.PI * 2, speed: 0,
-    state: 'walk', color: PAL.ped[Math.floor(Math.random() * PAL.ped.length)],
-    hp: 100, armed, fireCd: 0, dead: false, fleeT: 0, walkT: 0,
-  };
+export function makeCopCarMesh() {
+  const g = makeCarMesh(PAL.copCar);
+  const bar = box(1.5, 0.22, 0.5, 0xffffff, 0, 1.32, -0.1);
+  g.add(bar);
+  const red = box(0.7, 0.24, 0.52, 0xff2222, -0.38, 1.32, -0.1);
+  red.material = new THREE.MeshBasicMaterial({ color: 0xff2222 });
+  const blue = box(0.7, 0.24, 0.52, 0x2244ff, 0.38, 1.32, -0.1);
+  blue.material = new THREE.MeshBasicMaterial({ color: 0x2244ff });
+  g.add(red, blue);
+  return g;
 }
 
-// Player-driven car physics. Returns true if a hard crash happened.
-export function driveCar(car, gas, brake, steer, dt, world) {
-  const prev = car.speed;
-  if (gas > 0) car.speed += car.accel * gas * dt;
-  if (brake > 0) {
-    if (car.speed > 10) car.speed -= CFG.CAR_BRAKE * brake * dt;
-    else car.speed -= CFG.CAR_REVERSE * brake * dt;
+export function makePedMesh(color, opts = {}) {
+  const g = new THREE.Group();
+  const skin = new THREE.MeshLambertMaterial({ color: 0xe8b88a });
+  const shirt = new THREE.MeshLambertMaterial({ color });
+  const pants = new THREE.MeshLambertMaterial({ color: 0x2a2f3a });
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.5, 1.05, 8), shirt);
+  body.position.y = 1.05;
+  g.add(body);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.34, 10, 8), skin);
+  head.position.y = 1.85;
+  g.add(head);
+  const legL = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.55, 6), pants);
+  legL.position.set(-0.2, 0.28, 0);
+  const legR = legL.clone(); legR.position.x = 0.2;
+  g.add(legL, legR);
+  if (opts.cop) {
+    const hat = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.38, 0.16, 8), new THREE.MeshLambertMaterial({ color: 0x1a2a6b }));
+    hat.position.y = 2.12;
+    g.add(hat);
   }
-  car.speed -= car.speed * 0.55 * dt; // rolling drag
-  if (Math.abs(car.speed) < 4 && gas === 0 && brake === 0) car.speed = 0;
-  car.speed = clamp(car.speed, -CFG.CAR_REVERSE, car.max);
-  const spd = Math.abs(car.speed);
-  car.angle += steer * CFG.CAR_TURN * dt * clamp(spd / 120, 0, 1) * (car.speed >= 0 ? 1 : -1);
-  const nx = car.x + Math.cos(car.angle) * car.speed * dt;
-  const ny = car.y + Math.sin(car.angle) * car.speed * dt;
-  const res = collideCircle(world, nx, ny, 16);
-  const crashed = res.hit && Math.abs(car.speed) > 120;
-  if (res.hit) {
-    car.speed *= 0.35;
-    if (crashed) car.hp -= 8;
-  }
-  const c = clampToWorld(res.x, res.y, 24);
-  car.x = c.x; car.y = c.y;
-  car.brake = brake > 0 && prev > 10;
-  return crashed;
-}
-
-export function drawCar(ctx, car, time) {
-  ctx.save();
-  ctx.translate(car.x, car.y);
-  ctx.rotate(car.angle);
-  // Shadow.
-  ctx.fillStyle = 'rgba(0,0,0,0.25)';
-  ctx.fillRect(-19, -11 + 4, 38, 22);
-  // Body.
-  ctx.fillStyle = car.color;
-  roundRect(ctx, -20, -11, 40, 22, 6); ctx.fill();
-  // Hood + trunk.
-  ctx.fillStyle = 'rgba(0,0,0,0.18)';
-  ctx.fillRect(-20, -11, 8, 22);
-  // Windshield + rear window.
-  ctx.fillStyle = '#bfe3ea';
-  ctx.fillRect(2, -9, 6, 18);
-  ctx.fillRect(-13, -9, 4, 18);
-  // Wheels.
-  ctx.fillStyle = '#16161a';
-  ctx.fillRect(-14, -13, 8, 4); ctx.fillRect(-14, 9, 8, 4);
-  ctx.fillRect(8, -13, 8, 4); ctx.fillRect(8, 9, 8, 4);
-  // Headlights.
-  ctx.fillStyle = '#fff8c0';
-  ctx.fillRect(19, -8, 2, 4); ctx.fillRect(19, 4, 2, 4);
-  if (car.brake) { ctx.fillStyle = '#ff2d2d'; ctx.fillRect(-21, -8, 2, 4); ctx.fillRect(-21, 4, 2, 4); }
-  // Police light bar.
-  if (car.siren) {
-    const on = Math.floor(time * 4) % 2 === 0;
-    ctx.fillStyle = on ? '#ff2d2d' : '#2f6df6';
-    ctx.fillRect(-4, -12, 8, 4);
-    ctx.fillStyle = on ? '#2f6df6' : '#ff2d2d';
-    ctx.fillRect(-4, 8, 8, 4);
-  }
-  // Smoke when damaged.
-  if (car.hp < 40 && !car.dead) {
-    ctx.fillStyle = PAL.smoke;
-    ctx.beginPath(); ctx.arc(-14 + Math.sin(time * 9) * 3, -6, 7, 0, Math.PI * 2); ctx.fill();
-  }
-  ctx.restore();
-  if (car.dead) {
-    ctx.fillStyle = 'rgba(20,20,20,0.5)';
-    ctx.beginPath(); ctx.arc(car.x, car.y, 22, 0, Math.PI * 2); ctx.fill();
-  }
-}
-
-export function drawPlayer(ctx, p, time) {
-  ctx.save();
-  ctx.translate(p.x, p.y);
-  // Shadow.
-  ctx.fillStyle = 'rgba(0,0,0,0.3)';
-  ctx.beginPath(); ctx.ellipse(2, 3, 11, 8, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.rotate(p.angle);
-  // Body.
-  ctx.fillStyle = PAL.player;
-  ctx.beginPath(); ctx.arc(0, 0, 10, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = '#1d7a44';
-  ctx.beginPath(); ctx.arc(0, 0, 5, 0, Math.PI * 2); ctx.fill();
-  // Gun arm.
-  ctx.strokeStyle = '#222';
-  ctx.lineWidth = 4;
-  ctx.beginPath(); ctx.moveTo(4, 0); ctx.lineTo(16, 0); ctx.stroke();
-  ctx.restore();
-}
-
-export function drawPed(ctx, p) {
-  if (p.dead) {
-    ctx.fillStyle = 'rgba(60,20,20,0.6)';
-    ctx.beginPath(); ctx.ellipse(p.x, p.y, 10, 6, p.angle, 0, Math.PI * 2); ctx.fill();
-    return;
-  }
-  ctx.save();
-  ctx.translate(p.x, p.y);
-  ctx.fillStyle = 'rgba(0,0,0,0.25)';
-  ctx.beginPath(); ctx.ellipse(1, 2, 8, 6, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = p.color;
-  ctx.beginPath(); ctx.arc(0, 0, 8, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = '#2b2118';
-  ctx.beginPath(); ctx.arc(Math.cos(p.angle) * 3, Math.sin(p.angle) * 3, 3.5, 0, Math.PI * 2); ctx.fill();
-  if (p.armed) {
-    ctx.strokeStyle = '#222'; ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(Math.cos(p.angle) * 14, Math.sin(p.angle) * 14); ctx.stroke();
-  }
-  ctx.restore();
-}
-
-export function roundRect(ctx, x, y, w, h, r) {
-  ctx.beginPath();
-  ctx.moveTo(x + r, y);
-  ctx.arcTo(x + w, y, x + w, y + h, r);
-  ctx.arcTo(x + w, y + h, x, y + h, r);
-  ctx.arcTo(x, y + h, x, y, r);
-  ctx.arcTo(x, y, x + w, y, r);
-  ctx.closePath();
+  g.userData.legs = [legL, legR];
+  return g;
 }

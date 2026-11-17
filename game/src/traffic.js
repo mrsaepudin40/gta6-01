@@ -1,106 +1,99 @@
-// Traffic cars and pedestrians: simple road/sidewalk AI.
-import { CFG } from './config.js';
-import { makeCar, makePed } from './entities.js';
+// Traffic cars (road loops) + pedestrians (sidewalk walks, flee gunfire).
+import * as THREE from 'three';
+import { CFG, PAL } from './config.js';
+import { makeRng, dist2d, angLerp, clamp } from './random.js';
+import { makeCarMesh, makePedMesh } from './entities.js';
+import { makeCarState, driveCar } from './car.js';
 import { isRoad, collideCircle } from './world.js';
-import { clamp } from './random.js';
 
-const TRAFFIC_KINDS = ['sedan', 'taxi', 'pickup', 'van', 'sedan', 'taxi'];
+const TRAFFIC_COLORS = [0xc94f43, 0xf2c230, 0x3fa7d6, 0x7a9a5b, 0xe8e3d8, 0x9b7ec6, 0xd97b2f];
 
-export function spawnTraffic(world, rng, n) {
+export function initTraffic(scene, world) {
+  const rng = makeRng(CFG.WORLD_SEED + 7);
   const cars = [];
-  for (let i = 0; i < n; i++) {
-    const vertical = rng.chance(0.5);
-    const road = vertical ? rng.pick(world.roadsX) : rng.pick(world.roadsY);
-    const along = rng.range(150, (vertical ? CFG.WORLD_H : CFG.WORLD_W) - 150);
-    const dir = rng.chance(0.5) ? 1 : -1;
-    const lane = rng.chance(0.5) ? 22 : -22;
-    const x = vertical ? road + lane : along;
-    const y = vertical ? along : road + lane;
-    const angle = vertical ? (dir > 0 ? Math.PI / 2 : -Math.PI / 2) : (dir > 0 ? 0 : Math.PI);
-    const car = makeCar(x, y, angle, rng.pick(TRAFFIC_KINDS), 'traffic');
-    car.axis = vertical ? 'y' : 'x';
-    car.dir = dir;
-    car.cruise = rng.range(120, 185);
-    car.speed = car.cruise;
-    cars.push(car);
-  }
-  return cars;
-}
-
-export function spawnPeds(world, rng, n) {
   const peds = [];
-  for (let i = 0; i < n; i++) {
-    const road = rng.pick(world.roadsX);
-    const along = rng.range(150, CFG.WORLD_H - 150);
-    const side = rng.chance(0.5) ? 68 : -68;
-    peds.push(makePed(road + side, along));
+  // traffic cars: each loops a rectangle around one block
+  for (let i = 0; i < 14; i++) {
+    const bx = rng.pick([-1200, -800, -400, 0, 400, 800]);
+    const bz = rng.pick([-800, -400, 0, 400, 800]);
+    const loop = [
+      { x: bx - 200, z: bz - 200 }, { x: bx + 200, z: bz - 200 },
+      { x: bx + 200, z: bz + 200 }, { x: bx - 200, z: bz + 200 },
+    ];
+    const color = rng.pick(TRAFFIC_COLORS);
+    const mesh = makeCarMesh(color);
+    scene.add(mesh);
+    const st = makeCarState(loop[0].x, loop[0].z, 0, { mesh, max: 13, accel: 10 });
+    cars.push({ ...st, loop, wp: 1, color, parked: false });
   }
-  return peds;
+  // parked cars (stealable)
+  const parked = [];
+  for (let i = 0; i < 8; i++) {
+    const x = rng.pick([-1200, -800, -400, 0, 400, 800, 1200]) + rng.range(-30, 30);
+    const z = rng.pick([-800, -400, 0, 400, 800]) + rng.range(-30, 30);
+    const sport = rng.chance(0.25);
+    const mesh = makeCarMesh(sport ? 0x3fa7d6 : rng.pick(TRAFFIC_COLORS), { sport });
+    mesh.position.set(x, 0, z);
+    mesh.rotation.y = rng.range(0, Math.PI * 2);
+    scene.add(mesh);
+    parked.push({ x, z, heading: mesh.rotation.y, mesh, sport, kind: sport ? 'sport' : 'sedan', taken: false });
+  }
+  // pedestrians
+  for (let i = 0; i < 20; i++) {
+    const x = rng.range(-1500, 1300), z = rng.range(-1100, 1100);
+    if (isRoad(x, z)) continue;
+    const mesh = makePedMesh(rng.pick(PAL.ped));
+    mesh.position.set(x, 0, z);
+    scene.add(mesh);
+    peds.push({ x, z, heading: rng.range(0, Math.PI * 2), mesh, speed: rng.range(1.2, 2.2), fleeT: 0, tx: x, tz: z });
+  }
+  return { cars, parked, peds };
 }
 
-export function updateTraffic(game, dt) {
-  const { world, rng } = game;
-  // Traffic cars follow their road; at intersections they may turn.
-  for (const car of game.trafficCars) {
-    if (car.dead) continue;
-    // Slow down if a car is close ahead.
-    let target = car.cruise;
-    for (const other of game.trafficCars) {
-      if (other === car || other.dead) continue;
-      const dx = other.x - car.x, dy = other.y - car.y;
-      const ahead = dx * Math.cos(car.angle) + dy * Math.sin(car.angle);
-      const side = Math.abs(-dx * Math.sin(car.angle) + dy * Math.cos(car.angle));
-      if (ahead > 0 && ahead < 70 && side < 20) { target = 0; break; }
-    }
-    car.speed += clamp(target - car.speed, -260 * dt, 200 * dt);
-    const nx = car.x + Math.cos(car.angle) * car.speed * dt;
-    const ny = car.y + Math.sin(car.angle) * car.speed * dt;
-    if (!isRoad(world, nx, ny)) {
-      // Reached a dead end of the road grid: turn around.
-      car.angle += Math.PI;
-      car.x += Math.cos(car.angle) * 4; car.y += Math.sin(car.angle) * 4;
-      continue;
-    }
-    car.x = nx; car.y = ny;
-    // At an intersection, sometimes turn onto the crossing road.
-    const cx = world.roadsX.find((rx) => Math.abs(car.x - rx) < 26);
-    const cy = world.roadsY.find((ry) => Math.abs(car.y - ry) < 26);
-    if ((cx !== undefined || cy !== undefined) && rng.chance(dt * 0.55)) {
-      const turns = [];
-      if (cx !== undefined) { turns.push(-Math.PI / 2, Math.PI / 2); }
-      if (cy !== undefined) { turns.push(0, Math.PI); }
-      const a = rng.pick(turns);
-      if (Math.abs(a - car.angle) > 0.1) {
-        car.angle = a;
-        // Snap onto the lane of the new road.
-        if (a === 0 || a === Math.PI) car.y = (cy !== undefined ? cy : car.y) + (rng.chance(0.5) ? 22 : -22);
-        else car.x = (cx !== undefined ? cx : car.x) + (rng.chance(0.5) ? 22 : -22);
-      }
-    }
+export function updateTraffic(t, dt, world, playerPos, gunshotAt) {
+  // loop cars
+  for (const c of t.cars) {
+    const wp = c.loop[c.wp];
+    const d = dist2d(c.x, c.z, wp.x, wp.z);
+    if (d < 12) { c.wp = (c.wp + 1) % c.loop.length; continue; }
+    const want = Math.atan2(wp.x - c.x, wp.z - c.z);
+    c.heading = angLerp(c.heading, want, Math.min(1, dt * 2.2));
+    const input = { forward: true, back: false, left: false, right: false };
+    // steer toward waypoint via heading error
+    let err = want - c.heading;
+    while (err > Math.PI) err -= Math.PI * 2;
+    while (err < -Math.PI) err += Math.PI * 2;
+    input.left = err > 0.08; input.right = err < -0.08;
+    c.speed = Math.min(c.speed + 6 * dt, 12);
+    driveCar(c, input, dt, world, null);
   }
-  // Pedestrians walk the sidewalks; they flee from gunfire.
-  for (const ped of game.peds) {
-    if (ped.dead) continue;
-    ped.walkT -= dt;
-    const shot = game.lastShot;
-    if (shot && game.time - shot.t < 2.5 && Math.hypot(ped.x - shot.x, ped.y - shot.y) < 380) {
-      ped.state = 'flee';
-      ped.angle = Math.atan2(ped.y - shot.y, ped.x - shot.x);
-      ped.speed = 150;
-    } else if (ped.state === 'flee' && (!shot || game.time - shot.t > 2.5)) {
-      ped.state = 'walk'; ped.speed = 0;
-    }
-    if (ped.state === 'walk') {
-      if (ped.walkT <= 0) {
-        ped.walkT = rng.range(2, 6);
-        if (rng.chance(0.5)) ped.angle += rng.pick([-Math.PI / 2, Math.PI / 2, Math.PI]);
+  // pedestrians
+  for (const p of t.peds) {
+    if (gunshotAt && dist2d(p.x, p.z, gunshotAt.x, gunshotAt.z) < 45) p.fleeT = 3;
+    if (p.fleeT > 0) {
+      p.fleeT -= dt;
+      const a = Math.atan2(p.x - playerPos.x, p.z - playerPos.z);
+      p.heading = angLerp(p.heading, a, Math.min(1, dt * 6));
+      p.x += Math.sin(p.heading) * 5.5 * dt;
+      p.z += Math.cos(p.heading) * 5.5 * dt;
+    } else {
+      const d = dist2d(p.x, p.z, p.tx, p.tz);
+      if (d < 6) {
+        p.tx = clamp(p.x + (Math.random() - 0.5) * 300, -1500, 1350);
+        p.tz = clamp(p.z + (Math.random() - 0.5) * 300, -1100, 1100);
       }
-      ped.speed = 55;
+      const want = Math.atan2(p.tx - p.x, p.tz - p.z);
+      p.heading = angLerp(p.heading, want, Math.min(1, dt * 3));
+      p.x += Math.sin(p.heading) * p.speed * dt;
+      p.z += Math.cos(p.heading) * p.speed * dt;
     }
-    const nx = ped.x + Math.cos(ped.angle) * ped.speed * dt;
-    const ny = ped.y + Math.sin(ped.angle) * ped.speed * dt;
-    const res = collideCircle(world, nx, ny, 9);
-    ped.x = res.x; ped.y = res.y;
-    if (res.hit && ped.state === 'walk') ped.angle += Math.PI / 2;
+    const c = collideCircle(world, p.x, p.z, 0.8);
+    p.x = c.x; p.z = c.z;
+    p.mesh.position.set(p.x, 0, p.z);
+    p.mesh.rotation.y = p.heading;
+    const t2 = performance.now() * 0.008;
+    const legs = p.mesh.userData.legs || [];
+    if (legs[0]) legs[0].rotation.x = Math.sin(t2) * 0.5;
+    if (legs[1]) legs[1].rotation.x = -Math.sin(t2) * 0.5;
   }
 }

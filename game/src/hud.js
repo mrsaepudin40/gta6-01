@@ -1,251 +1,163 @@
-// HUD: money, wanted stars, clock, minimap, objective, speed, radio, ammo, subtitles + screens.
-import { CFG, PAL, RADIO_STATIONS } from './config.js';
-import { missionObjective, missionTitle } from './missions.js';
-import { roundRect } from './entities.js';
+// HUD: DOM readouts + 2D top-down minimap canvas + overlays.
+import { CFG, RADIO, GARAGE_UPGRADES } from './config.js';
+import { missionTitle, missionObjective } from './missions.js';
+import { starsOf } from './police.js';
+import { priceOf } from './garage.js';
+import { dist2d } from './random.js';
 
-const MM_W = 208, MM_H = 156;
+const $ = (id) => document.getElementById(id);
+const cache = {};
 
-export function clockText(game) {
-  const mins = Math.floor(game.clockMins) % 1440;
-  const hh = String(Math.floor(mins / 60)).padStart(2, '0');
-  const mm = String(mins % 60).padStart(2, '0');
-  return `Day ${game.clockDay} ${hh}:${mm}`;
+function setText(id, v) {
+  if (cache[id] !== v) { cache[id] = v; const el = $(id); if (el) el.textContent = v; }
 }
 
-export function drawHUD(ctx, game) {
+export function initHud() {
+  const mm = $('minimap');
+  if (mm) { mm.width = 220; mm.height = 168; }
+}
+
+export function updateHud(game) {
   const p = game.player;
-  ctx.save();
-  // Top-left: money + wanted stars + clock.
-  panel(ctx, 12, 12, 250, 92);
-  ctx.fillStyle = PAL.hudText;
-  ctx.font = 'bold 26px system-ui, sans-serif';
-  ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.fillText('$' + Math.round(p.money).toLocaleString('en-US'), 26, 32);
-  ctx.font = '22px system-ui, sans-serif';
-  let sx = 26;
-  for (let i = 0; i < 5; i++) {
-    ctx.fillStyle = i < game.wanted ? PAL.star : PAL.starEmpty;
-    ctx.fillText('★', sx, 60);
-    sx += 26;
+  const stars = starsOf(game.police.heat);
+  setText('hud-money', '$' + Math.round(p.money).toLocaleString('en-US'));
+  setText('hud-stars', '★'.repeat(stars) + '☆'.repeat(5 - stars));
+  const day = game.day;
+  const hh = String(Math.floor(game.clockMin / 60) % 24).padStart(2, '0');
+  const mm = String(Math.floor(game.clockMin % 60)).padStart(2, '0');
+  setText('hud-clock', `Day ${day} ${hh}:${mm}`);
+  setText('hud-radio', '♪ ' + RADIO[game.radioIdx] + ' · C');
+  const speed = p.inCar ? Math.abs(p.inCar.speed) * 3.6 : 0;
+  setText('hud-speed', p.inCar ? Math.round(speed) + ' mph' : '— mph');
+  const hp = p.inCar ? p.inCar.hp : p.hp;
+  const hpMax = p.inCar ? p.inCar.maxHp : CFG.PLAYER_HP;
+  const hb = $('hud-hp-fill');
+  if (hb) hb.style.width = Math.max(0, (hp / hpMax) * 100) + '%';
+  const cb = $('hud-car-fill');
+  if (cb) {
+    cb.style.width = p.inCar ? Math.max(0, (p.inCar.hp / p.inCar.maxHp) * 100) + '%' : '0%';
+    const row = $('hud-car-row');
+    if (row) row.style.display = p.inCar ? 'flex' : 'none';
   }
-  ctx.fillStyle = '#ffd23f';
-  ctx.font = 'bold 15px system-ui, sans-serif';
-  ctx.fillText(clockText(game), 26, 88);
-  // Top-center: mission banner (number + name + timer + distance).
-  if (game.mission.started && game.mission.idx >= 0) {
-    const title = missionTitle(game);
-    let line2 = missionObjective(game);
-    const parts = [];
-    if (game.mission.timer > 0) parts.push('⏱ ' + Math.ceil(game.mission.timer) + 's');
-    if (game.mission.marker) {
-      const mx = p.inCar ? p.inCar.x : p.x, my = p.inCar ? p.inCar.y : p.y;
-      const d = Math.round(Math.hypot(game.mission.marker.x - mx, game.mission.marker.y - my) / 10);
-      parts.push(d + 'm to ' + game.mission.marker.label);
-    }
-    if (parts.length > 0) line2 += '  ·  ' + parts.join('  ·  ');
-    const bw = 600;
-    panel(ctx, (CFG.VIEW_W - bw) / 2, 12, bw, 62);
-    ctx.fillStyle = '#ffd23f';
-    ctx.font = 'bold 17px system-ui, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText(title, CFG.VIEW_W / 2, 34);
-    ctx.fillStyle = PAL.hudText;
-    ctx.font = '13px system-ui, sans-serif';
-    ctx.fillText(truncate(ctx, line2, bw - 32), CFG.VIEW_W / 2, 58);
-    ctx.textAlign = 'left';
+  setText('hud-ammo', p.inCar ? '' : `PISTOL ${game.combat.ammo}/${game.combat.reserve}`);
+  const am = $('hud-ammo');
+  if (am) am.style.display = p.inCar ? 'none' : 'block';
+  // mission banner
+  const m = game.mission;
+  const banner = $('hud-banner');
+  if (banner) {
+    if (m.started && m.idx >= 0) {
+      banner.style.display = 'block';
+      setText('hud-mission-title', missionTitle(game));
+      let sub = missionObjective(game);
+      if (m.timer > 0) sub += `  ·  ⏱ ${Math.ceil(m.timer)}s`;
+      if (m.marker) {
+        const px = p.inCar ? p.inCar.x : p.x;
+        const pz = p.inCar ? p.inCar.z : p.z;
+        sub += `  ·  ${Math.round(dist2d(px, pz, m.marker.x, m.marker.z))}m`;
+      }
+      setText('hud-mission-sub', sub);
+    } else banner.style.display = 'none';
   }
-  // Minimap top-right.
-  const mmx = CFG.VIEW_W - MM_W - 12, mmy = 12;
-  ctx.drawImage(game.world.minimap, mmx, mmy, MM_W, MM_H);
-  ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.lineWidth = 2;
-  ctx.strokeRect(mmx, mmy, MM_W, MM_H);
-  const kx = MM_W / CFG.WORLD_W, ky = MM_H / CFG.WORLD_H;
-  const dot = (x, y, color, r = 4) => {
-    ctx.fillStyle = color;
-    ctx.beginPath(); ctx.arc(mmx + x * kx, mmy + y * ky, r, 0, Math.PI * 2); ctx.fill();
-  };
-  if (game.mission.marker) {
-    const pulse = 4 + Math.sin(game.time * 5) * 1.5;
-    dot(game.mission.marker.x, game.mission.marker.y, PAL.marker, pulse);
+  // dialogue
+  const dlg = $('hud-dialog');
+  if (dlg) {
+    if (m.dialog.length > 0) {
+      dlg.style.display = 'block';
+      const d = m.dialog[0];
+      setText('hud-dialog-who', d.who);
+      setText('hud-dialog-text', d.text);
+    } else dlg.style.display = 'none';
   }
-  // Benny's Garage is always on the map.
-  dot(game.world.markers.garage.x, game.world.markers.garage.y, '#ff9f1c', 3.5);
-  for (const c of game.copCars) if (!c.dead) dot(c.x, c.y, '#3b82f6', 3.5);
-  for (const c of game.cops) if (!c.dead) dot(c.x, c.y, '#60a5fa', 3);
-  for (const e of game.enemies) if (!e.dead) dot(e.x, e.y, '#ff3b30', 3.5);
-  const px = p.inCar ? p.inCar.x : p.x, py = p.inCar ? p.inCar.y : p.y;
-  dot(px, py, '#37d67a', 5);
-  ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.arc(mmx + px * kx, mmy + py * ky, 7, 0, Math.PI * 2); ctx.stroke();
-  // Bottom-left: health bar.
-  panel(ctx, 12, CFG.VIEW_H - 52, 230, 40);
-  ctx.fillStyle = '#333';
-  ctx.fillRect(24, CFG.VIEW_H - 38, 150, 14);
-  ctx.fillStyle = p.hp > 40 ? '#37d67a' : '#ff5a5a';
-  ctx.fillRect(24, CFG.VIEW_H - 38, 150 * Math.max(0, p.hp / 100), 14);
-  ctx.fillStyle = PAL.hudText;
-  ctx.font = 'bold 13px system-ui, sans-serif';
-  ctx.fillText('HEALTH ' + Math.ceil(p.hp), 182, CFG.VIEW_H - 30);
-  // Ammo on foot / car HP when driving.
-  if (p.inCar) {
-    panel(ctx, 250, CFG.VIEW_H - 52, 170, 40);
-    ctx.fillStyle = '#333';
-    ctx.fillRect(262, CFG.VIEW_H - 38, 90, 14);
-    ctx.fillStyle = p.inCar.hp > 40 ? '#37d67a' : '#ff5a5a';
-    ctx.fillRect(262, CFG.VIEW_H - 38, 90 * Math.max(0, p.inCar.hp / p.inCar.maxHp), 14);
-    ctx.fillStyle = PAL.hudText;
-    ctx.font = 'bold 13px system-ui, sans-serif';
-    ctx.fillText('CAR ' + Math.ceil(p.inCar.hp), 360, CFG.VIEW_H - 30);
-  } else {
-    panel(ctx, 250, CFG.VIEW_H - 52, 170, 40);
-    const empty = p.ammoMag <= 0 && p.ammoRes <= 0;
-    ctx.fillStyle = empty ? '#ff5a5a' : PAL.hudText;
-    ctx.font = 'bold 18px system-ui, sans-serif';
-    ctx.fillText(empty ? 'PISTOL — EMPTY' : `PISTOL ${p.ammoMag}/${p.ammoRes}`, 262, CFG.VIEW_H - 31);
+  // mission passed banner
+  const passed = $('hud-passed');
+  if (passed) {
+    if (m.bannerT > 0 && m.banner) { passed.style.display = 'block'; setText('hud-passed-text', m.banner); }
+    else passed.style.display = 'none';
   }
-  // Radio station above the speedometer.
-  panel(ctx, CFG.VIEW_W - 260, CFG.VIEW_H - 92, 248, 30);
-  ctx.fillStyle = '#ffd23f';
-  ctx.font = 'bold 14px system-ui, sans-serif';
-  ctx.textAlign = 'right';
-  ctx.fillText('♪ ' + RADIO_STATIONS[game.radioIdx] + '  ·  C', CFG.VIEW_W - 26, CFG.VIEW_H - 76);
-  ctx.textAlign = 'left';
-  // Bottom-right: speed when driving.
-  if (p.inCar) {
-    panel(ctx, CFG.VIEW_W - 150, CFG.VIEW_H - 52, 138, 40);
-    ctx.fillStyle = PAL.hudText;
-    ctx.font = 'bold 24px system-ui, sans-serif';
-    ctx.textAlign = 'right';
-    ctx.fillText(Math.round(Math.abs(p.inCar.speed) * 0.24) + ' mph', CFG.VIEW_W - 26, CFG.VIEW_H - 31);
-    ctx.textAlign = 'left';
+  // hint line
+  const hint = $('hud-hint');
+  if (hint) {
+    setText('hud-hint', p.inCar
+      ? 'W/S drive · A/D steer · E exit car · F punch · Click shoot · C radio · M mute · P pause'
+      : 'WASD move · E enter car · F punch · Click shoot · G garage (near Benny’s) · C radio · M mute');
   }
-  // Objective bar bottom-center.
-  const obj = missionObjective(game);
-  ctx.font = '15px system-ui, sans-serif';
-  const w = Math.min(760, ctx.measureText(obj).width + 36);
-  panel(ctx, (CFG.VIEW_W - w) / 2, CFG.VIEW_H - 92, w, 30);
-  ctx.fillStyle = PAL.hudText;
-  ctx.textAlign = 'center';
-  ctx.fillText(obj, CFG.VIEW_W / 2, CFG.VIEW_H - 76);
-  ctx.textAlign = 'left';
-  // Dialogue subtitle.
-  if (game.mission.dialog.length > 0) {
-    const d = game.mission.dialog[0];
-    ctx.font = 'bold 16px system-ui, sans-serif';
-    const tw = ctx.measureText(d.who + ': ' + d.text).width + 36;
-    panel(ctx, (CFG.VIEW_W - tw) / 2, CFG.VIEW_H - 138, tw, 32);
-    ctx.fillStyle = '#ffd23f';
-    ctx.fillText(d.who + ': ', (CFG.VIEW_W - tw) / 2 + 18, CFG.VIEW_H - 121);
-    ctx.fillStyle = PAL.hudText;
-    ctx.font = '16px system-ui, sans-serif';
-    ctx.fillText(d.text, (CFG.VIEW_W - tw) / 2 + 18 + ctx.measureText(d.who + ': ').width, CFG.VIEW_H - 121);
-  }
-  // MISSION PASSED result banner.
-  if (game.resultBanner && game.time < game.resultBanner.until) {
-    const b = game.resultBanner;
-    ctx.font = 'bold 34px system-ui, sans-serif';
-    const tw = Math.max(ctx.measureText(b.title).width, ctx.measureText(b.sub).width) + 72;
-    panel(ctx, (CFG.VIEW_W - tw) / 2, 150, tw, 84);
-    ctx.fillStyle = '#37d67a';
-    ctx.textAlign = 'center';
-    ctx.fillText(b.title, CFG.VIEW_W / 2, 182);
-    ctx.fillStyle = PAL.hudText;
-    ctx.font = '17px system-ui, sans-serif';
-    ctx.fillText(b.sub, CFG.VIEW_W / 2, 214);
-    ctx.textAlign = 'left';
-  }
-  // Controls hint lives on the title / pause screens, not over the HUD.
-  ctx.restore();
+  drawMinimap(game);
+  updateGarageMenu(game);
 }
 
-function truncate(ctx, text, maxW) {
-  if (ctx.measureText(text).width <= maxW) return text;
-  while (text.length > 4 && ctx.measureText(text + '…').width > maxW) text = text.slice(0, -1);
-  return text + '…';
-}
-
-function panel(ctx, x, y, w, h) {
-  ctx.fillStyle = PAL.hudBg;
-  roundRect(ctx, x, y, w, h, 8);
-  ctx.fill();
-}
-
-export const MENU = {
-  new: { x: 490, y: 380, w: 300, h: 52 },
-  cont: { x: 490, y: 444, w: 300, h: 52 },
-  how: { x: 490, y: 508, w: 300, h: 52 },
-};
-
-export function titleMenuHit(x, y) {
-  for (const [k, r] of Object.entries(MENU)) {
-    if (x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h) return k;
+function drawMinimap(game) {
+  const cv = $('minimap');
+  if (!cv) return;
+  const g = cv.getContext('2d');
+  const W = cv.width, H = cv.height;
+  const sx = W / CFG.WORLD_W, sz = H / CFG.WORLD_H;
+  const X = (x) => (x + CFG.WORLD_W / 2) * sx;
+  const Z = (z) => (z + CFG.WORLD_H / 2) * sz;
+  g.fillStyle = 'rgba(8,12,8,0.85)'; g.fillRect(0, 0, W, H);
+  // water + beach
+  g.fillStyle = '#2ea8c4'; g.fillRect(X(CFG.WATER_X), 0, W - X(CFG.WATER_X), H);
+  g.fillStyle = '#e9cf8f'; g.fillRect(X(CFG.BEACH_X), 0, X(CFG.WATER_X) - X(CFG.BEACH_X), H);
+  // roads
+  g.strokeStyle = '#55555f'; g.lineWidth = 5;
+  for (let x = -1600; x <= 1600; x += CFG.BLOCK) { g.beginPath(); g.moveTo(X(x), 0); g.lineTo(X(x), H); g.stroke(); }
+  for (let z = -1200; z <= 1200; z += CFG.BLOCK) { g.beginPath(); g.moveTo(0, Z(z)); g.lineTo(X(CFG.BEACH_X), Z(z)); g.stroke(); }
+  // buildings
+  g.fillStyle = '#9aa0a8';
+  for (const b of game.world.buildings) g.fillRect(X(b.x - b.w / 2), Z(b.z - b.d / 2), Math.max(2, b.w * sx), Math.max(2, b.d * sz));
+  // garage
+  g.fillStyle = '#ff8c1a';
+  g.beginPath(); g.arc(X(game.world.markers.garage.x), Z(game.world.markers.garage.z), 4, 0, Math.PI * 2); g.fill();
+  // mission marker
+  const m = game.mission;
+  if (m.marker) {
+    g.fillStyle = '#ffd23f';
+    const mx = X(m.marker.x), mz = Z(m.marker.z);
+    g.beginPath(); g.moveTo(mx, mz - 6); g.lineTo(mx + 5, mz + 4); g.lineTo(mx - 5, mz + 4); g.closePath(); g.fill();
   }
-  return null;
+  // traffic
+  g.fillStyle = '#ffffff';
+  for (const c of game.traffic.cars) g.fillRect(X(c.x) - 1.5, Z(c.z) - 1.5, 3, 3);
+  // police
+  g.fillStyle = '#2f6df6';
+  for (const c of game.police.cars) { g.beginPath(); g.arc(X(c.x), Z(c.z), 3.5, 0, Math.PI * 2); g.fill(); }
+  // player arrow
+  const p = game.player;
+  const px = p.inCar ? p.inCar.x : p.x;
+  const pz = p.inCar ? p.inCar.z : p.z;
+  const h = p.inCar ? p.inCar.heading : p.heading;
+  g.save();
+  g.translate(X(px), Z(pz));
+  g.rotate(Math.atan2(Math.sin(h), -Math.cos(h)) + Math.PI);
+  g.fillStyle = '#37d67a';
+  g.beginPath(); g.moveTo(0, -7); g.lineTo(5, 5); g.lineTo(-5, 5); g.closePath(); g.fill();
+  g.restore();
 }
 
-export function drawTitle(ctx, game, save, showHow) {
-  ctx.save();
-  // Sun-baked sky gradient backdrop (top-down city faintly visible behind).
-  const g = ctx.createLinearGradient(0, 0, 0, CFG.VIEW_H);
-  g.addColorStop(0, '#2b1608'); g.addColorStop(0.55, '#57240f'); g.addColorStop(1, '#1a0d06');
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, CFG.VIEW_W, CFG.VIEW_H);
-  ctx.fillStyle = '#ffb347';
-  ctx.beginPath(); ctx.arc(1060, 130, 62, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = 'rgba(255,179,71,0.25)';
-  ctx.beginPath(); ctx.arc(1060, 130, 96, 0, Math.PI * 2); ctx.fill();
-  ctx.textAlign = 'center';
-  ctx.fillStyle = '#ffd23f';
-  ctx.font = 'bold 84px system-ui, sans-serif';
-  ctx.fillText('SOLMAR BAY', CFG.VIEW_W / 2, 190);
-  ctx.fillStyle = '#fff';
-  ctx.font = '24px system-ui, sans-serif';
-  ctx.fillText('A sun-baked crime story — Jax Marlowe takes the bay', CFG.VIEW_W / 2, 232);
-  ctx.font = '15px system-ui, sans-serif';
-  ctx.fillStyle = 'rgba(255,255,255,0.75)';
-  ctx.fillText('Steal cars. Outrun the law. Run eight jobs for Mara. Own the docks.', CFG.VIEW_W / 2, 262);
-  const items = [
-    ['new', '▶  NEW GAME'],
-    ['cont', save ? '↻  CONTINUE  ($' + save.money + ' · Job ' + (save.mission + 1) + '/8)' : '↻  CONTINUE  (no save yet)'],
-    ['how', '?  HOW TO PLAY'],
-  ];
-  for (const [key, label] of items) {
-    const r = MENU[key];
-    const hover = game.menuHover === key;
-    ctx.fillStyle = hover ? '#ffd23f' : 'rgba(255,255,255,0.12)';
-    roundRect(ctx, r.x, r.y, r.w, r.h, 10); ctx.fill();
-    ctx.fillStyle = hover ? '#1a0d06' : '#fff';
-    ctx.font = 'bold 20px system-ui, sans-serif';
-    ctx.fillText(label, CFG.VIEW_W / 2, r.y + 33);
+function updateGarageMenu(game) {
+  const menu = $('garage-menu');
+  if (!menu) return;
+  if (!game.garage.open) { menu.style.display = 'none'; return; }
+  menu.style.display = 'block';
+  setText('garage-cash', 'Cash: $' + Math.round(game.player.money).toLocaleString('en-US'));
+  const list = $('garage-list');
+  if (list) {
+    let html = '';
+    GARAGE_UPGRADES.forEach((up, i) => {
+      const lvl = game.garage.owned[up.id] || 0;
+      const price = priceOf(up, game.garage.owned);
+      html += `<div class="g-item${i === game.garage.sel ? ' sel' : ''}"><b>${up.name} (Lv ${lvl}/${up.max})</b><span>${up.desc}</span><em>${price === null ? 'MAX' : '$' + price}</em></div>`;
+    });
+    if (cache['garage-list'] !== html) { cache['garage-list'] = html; list.innerHTML = html; }
   }
-  if (showHow) {
-    ctx.fillStyle = 'rgba(0,0,0,0.72)';
-    roundRect(ctx, 240, 580, 800, 118, 10); ctx.fill();
-    ctx.fillStyle = '#fff';
-    ctx.font = '15px system-ui, sans-serif';
-    ctx.fillText('WASD / arrows — walk or drive · E — steal / enter / exit a car · Mouse + Click — aim & shoot', CFG.VIEW_W / 2, 612);
-    ctx.fillText('F — punch · G — Benny\u2019s Garage (near the garage) · C — change radio · P — pause · R — restart · M — mute', CFG.VIEW_W / 2, 640);
-    ctx.fillText('Finish all 8 jobs to own Solmar Bay. Progress auto-saves.', CFG.VIEW_W / 2, 668);
-  }
-  ctx.font = '13px system-ui, sans-serif';
-  ctx.fillStyle = 'rgba(255,255,255,0.5)';
-  ctx.fillText('An original game. No Rockstar content. Runs fully offline.', CFG.VIEW_W / 2, CFG.VIEW_H - 18);
-  ctx.restore();
 }
 
-export function drawOverlay(ctx, title, sub, color = '#ff5a5a') {
-  ctx.save();
-  ctx.fillStyle = 'rgba(8,8,12,0.72)';
-  ctx.fillRect(0, 0, CFG.VIEW_W, CFG.VIEW_H);
-  ctx.textAlign = 'center';
-  ctx.fillStyle = color;
-  ctx.font = 'bold 72px system-ui, sans-serif';
-  ctx.fillText(title, CFG.VIEW_W / 2, 300);
-  ctx.fillStyle = '#fff';
-  ctx.font = '22px system-ui, sans-serif';
-  ctx.fillText(sub, CFG.VIEW_W / 2, 350);
-  ctx.font = '17px system-ui, sans-serif';
-  ctx.fillStyle = 'rgba(255,255,255,0.75)';
-  ctx.fillText('Press R to restart  ·  Press Enter for the title screen', CFG.VIEW_W / 2, 400);
-  ctx.restore();
+export function showOverlay(id) {
+  for (const el of document.querySelectorAll('.overlay')) el.style.display = 'none';
+  const t = $(id);
+  if (t) t.style.display = 'flex';
+}
+
+export function hideOverlays() {
+  for (const el of document.querySelectorAll('.overlay')) el.style.display = 'none';
 }

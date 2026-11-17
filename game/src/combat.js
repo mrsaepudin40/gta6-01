@@ -1,180 +1,88 @@
-// Shooting, punching, bullets, car damage, enemy gunmen.
+// Punch (F) + shoot (mouse click, hitscan raycast). Ammo, muzzle flash, tracers.
+import * as THREE from 'three';
 import { CFG } from './config.js';
 import { audio } from './audio.js';
-import { collideCircle } from './world.js';
-import { dist, angleTo } from './random.js';
-import { addHeat } from './police.js';
+import { dist2d } from './random.js';
 
-export function fireBullet(game) {
+export function makeCombat(scene) {
+  const tracerMat = new THREE.LineBasicMaterial({ color: 0xffe066, transparent: true, opacity: 0.9 });
+  const tracerGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
+  const tracer = new THREE.Line(tracerGeo, tracerMat);
+  tracer.visible = false;
+  scene.add(tracer);
+  const flash = new THREE.PointLight(0xffe066, 0, 18);
+  scene.add(flash);
+  return {
+    ammo: 12, reserve: 24, cooldown: 0, punchT: 0,
+    tracer, tracerT: 0, flash,
+  };
+}
+
+function muzzlePos(game) {
   const p = game.player;
-  if (p.inCar || p.fireCd > 0 || game.state !== 'playing') return;
-  if (p.ammoMag <= 0) {
-    if (p.ammoRes > 0) {
-      const take = Math.min(12, p.ammoRes);
-      p.ammoRes -= take; p.ammoMag = take;
-      p.fireCd = 0.9;
-      audio.click();
-    }
-    return;
-  }
-  p.ammoMag -= 1;
-  p.fireCd = CFG.FIRE_RATE;
-  const a = p.aim;
-  game.bullets.push({
-    x: p.x + Math.cos(a) * 16, y: p.y + Math.sin(a) * 16,
-    vx: Math.cos(a) * CFG.BULLET_SPEED, vy: Math.sin(a) * CFG.BULLET_SPEED,
-    from: 'player', life: 1.2, dmg: CFG.SHOT_DMG,
-  });
-  game.lastShot = { x: p.x, y: p.y, t: game.time };
-  addHeat(game, 4);
+  const x = p.inCar ? p.inCar.x : p.x;
+  const z = p.inCar ? p.inCar.z : p.z;
+  const h = p.inCar ? p.inCar.heading : p.heading;
+  return { x: x + Math.sin(h) * 2.2, z: z + Math.cos(h) * 2.2, y: p.inCar ? 1.2 : 1.5, heading: h };
+}
+
+export function tryShoot(game) {
+  const c = game.combat;
+  if (c.cooldown > 0 || game.state !== 'playing') return;
+  if (c.ammo <= 0) { c.ammo = 12; c.reserve = Math.max(0, c.reserve - 12); c.cooldown = 0.6; audio.denied(); return; }
+  c.ammo -= 1;
+  c.cooldown = CFG.FIRE_RATE;
   audio.shot();
-  spawnSparks(game, p.x + Math.cos(a) * 18, p.y + Math.sin(a) * 18, 3, '#ffe066');
+  const m = muzzlePos(game);
+  const dir = new THREE.Vector3(Math.sin(m.heading), 0, Math.cos(m.heading));
+  // hitscan vs peds + foot cops (simple distance-to-ray test)
+  let best = null, bd = CFG.BULLET_RANGE;
+  const consider = (x, z) => {
+    const dx = x - m.x, dz = z - m.z;
+    const along = dx * dir.x + dz * dir.z;
+    if (along < 0 || along > bd) return;
+    const perp = Math.abs(dx * dir.z - dz * dir.x);
+    if (perp < 2.2 && along < bd) { bd = along; best = { x, z }; }
+  };
+  for (const ped of game.traffic.peds) consider(ped.x, ped.z);
+  const end = best || { x: m.x + dir.x * CFG.BULLET_RANGE, z: m.z + dir.z * CFG.BULLET_RANGE };
+  // tracer
+  const pos = c.tracer.geometry.attributes.position;
+  pos.setXYZ(0, m.x, m.y, m.z);
+  pos.setXYZ(1, end.x, 1.2, end.z);
+  pos.needsUpdate = true;
+  c.tracer.visible = true;
+  c.tracerT = 0.07;
+  c.flash.position.set(m.x, m.y, m.z);
+  c.flash.intensity = 60;
+  if (best) {
+    // scare nearby peds
+    game.gunshotAt = { x: end.x, z: end.z };
+    game.gunshotT = 0.1;
+  }
+  game.addHeat && game.addHeat(6);
 }
 
-export function punch(game) {
-  const p = game.player;
-  if (p.inCar || p.punchCd > 0 || game.state !== 'playing') return;
-  p.punchCd = 0.45;
+export function tryPunch(game) {
+  const c = game.combat;
+  if (c.punchT > 0 || game.state !== 'playing') return;
+  c.punchT = 0.35;
   audio.punch();
-  const targets = [...game.peds, ...game.enemies, ...game.cops];
-  for (const t of targets) {
-    if (t.dead) continue;
-    if (dist(p.x, p.y, t.x, t.y) < CFG.PUNCH_RANGE) {
-      t.hp -= CFG.PUNCH_DMG;
-      t.x += Math.cos(p.aim) * 14; t.y += Math.sin(p.aim) * 14;
-      if (t.hp <= 0) { t.dead = true; addHeat(game, 12); }
-      spawnSparks(game, t.x, t.y, 5, '#ffffff');
-      break;
-    }
-  }
-}
-
-export function updateBullets(game, dt) {
-  for (const b of game.bullets) {
-    b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
-    const hitWall = collideCircle(game.world, b.x, b.y, 2).hit;
-    if (hitWall) { b.life = 0; spawnSparks(game, b.x, b.y, 4, '#ffb347'); continue; }
-    // Hit pedestrians / enemies / cops.
-    for (const t of [...game.peds, ...game.enemies, ...game.cops]) {
-      if (t.dead) continue;
-      if (dist(b.x, b.y, t.x, t.y) < 12) {
-        b.life = 0;
-        t.hp -= b.dmg;
-        if (t.hp <= 0) {
-          t.dead = true;
-          if (b.from === 'player') addHeat(game, game.enemies.includes(t) ? 0 : 14);
-        }
-        spawnSparks(game, b.x, b.y, 5, '#ff6b6b');
-        break;
-      }
-    }
-    if (b.life <= 0) continue;
-    // Hit cars (not the shooter's own).
-    for (const car of [...game.trafficCars, ...game.parkedCars, ...game.copCars]) {
-      if (car.dead) continue;
-      if (dist(b.x, b.y, car.x, car.y) < 20) {
-        b.life = 0;
-        damageCar(game, car, b.dmg);
-        spawnSparks(game, b.x, b.y, 4, '#9fb3c8');
-        break;
-      }
-    }
-    // Enemy bullets hit the player.
-    if (b.from === 'enemy') {
-      const p = game.player;
-      if (!p.inCar && dist(b.x, b.y, p.x, p.y) < 12) {
-        b.life = 0;
-        hurtPlayer(game, b.dmg);
-      } else if (p.inCar && dist(b.x, b.y, p.inCar.x, p.inCar.y) < 20) {
-        b.life = 0;
-        damageCar(game, p.inCar, b.dmg);
-      }
-    }
-  }
-  game.bullets = game.bullets.filter((b) => b.life > 0);
-}
-
-export function damageCar(game, car, n) {
-  // Armor plating protects the player's car.
-  if (car === game.player.inCar) n *= (1 - 0.2 * game.upgrades.armor);
-  car.hp -= n;
-  if (car.hp <= 0 && !car.dead) {
-    car.dead = true;
-    explode(game, car.x, car.y);
-    if (game.player.inCar === car) {
-      game.player.inCar = null;
-      game.player.x = car.x + 30; game.player.y = car.y + 30;
-      hurtPlayer(game, 20);
-    }
-  }
-}
-
-export function hurtPlayer(game, n) {
-  const p = game.player;
-  if (p.invuln > 0) return;
-  p.hp -= n;
-  p.invuln = 0.5;
-  audio.crash();
-  if (p.hp <= 0) {
-    p.hp = 0;
-    game.state = 'wasted';
-    audio.busted();
-  }
-}
-
-export function explode(game, x, y) {
-  spawnSparks(game, x, y, 26, '#ff9f1c');
-  spawnSparks(game, x, y, 14, '#3a3a3a');
-  audio.crash();
-  addHeat(game, 10);
-}
-
-export function spawnSparks(game, x, y, n, color) {
-  for (let i = 0; i < n; i++) {
-    const a = Math.random() * Math.PI * 2;
-    const s = 60 + Math.random() * 180;
-    game.particles.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, life: 0.4 + Math.random() * 0.3, max: 0.7, color, size: 2 + Math.random() * 3 });
-  }
-}
-
-export function updateParticles(game, dt) {
-  for (const pt of game.particles) {
-    pt.x += pt.vx * dt; pt.y += pt.vy * dt;
-    pt.vx *= 0.92; pt.vy *= 0.92;
-    pt.life -= dt;
-  }
-  game.particles = game.particles.filter((p) => p.life > 0);
-  // Tire marks fade slowly.
-  if (game.tireMarks.length > 600) game.tireMarks.splice(0, game.tireMarks.length - 600);
-}
-
-// Armed crew (mission 4) shoot at the player.
-export function updateEnemies(game, dt) {
   const p = game.player;
   const px = p.inCar ? p.inCar.x : p.x;
-  const py = p.inCar ? p.inCar.y : p.y;
-  for (const e of game.enemies) {
-    if (e.dead) continue;
-    const d = dist(e.x, e.y, px, py);
-    e.angle = angleTo(e.x, e.y, px, py);
-    if (d > 200) {
-      e.x += Math.cos(e.angle) * 120 * dt;
-      e.y += Math.sin(e.angle) * 120 * dt;
-    } else if (d < 120) {
-      e.x -= Math.cos(e.angle) * 60 * dt;
-      e.y -= Math.sin(e.angle) * 60 * dt;
-    }
-    e.fireCd -= dt;
-    if (d < 340 && e.fireCd <= 0) {
-      e.fireCd = e.boss ? 0.7 : 1.1;
-      const a = e.angle + (Math.random() - 0.5) * 0.25;
-      game.bullets.push({
-        x: e.x + Math.cos(a) * 16, y: e.y + Math.sin(a) * 16,
-        vx: Math.cos(a) * CFG.BULLET_SPEED * 0.85, vy: Math.sin(a) * CFG.BULLET_SPEED * 0.85,
-        from: 'enemy', life: 1.1, dmg: e.boss ? 12 : 8,
-      });
-      game.lastShot = { x: e.x, y: e.y, t: game.time };
-      audio.shot();
+  const pz = p.inCar ? p.inCar.z : p.z;
+  for (const ped of game.traffic.peds) {
+    if (dist2d(px, pz, ped.x, ped.z) < CFG.PUNCH_RANGE) {
+      ped.fleeT = 4;
+      game.addHeat && game.addHeat(8);
     }
   }
+}
+
+export function updateCombat(game, dt) {
+  const c = game.combat;
+  if (c.cooldown > 0) c.cooldown -= dt;
+  if (c.punchT > 0) c.punchT -= dt;
+  if (c.tracerT > 0) { c.tracerT -= dt; if (c.tracerT <= 0) c.tracer.visible = false; }
+  if (c.flash.intensity > 0) c.flash.intensity = Math.max(0, c.flash.intensity - dt * 900);
 }

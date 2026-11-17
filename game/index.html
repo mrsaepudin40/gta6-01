@@ -3,15 +3,90 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Solmar Bay — a sun-baked crime story</title>
+<title>Solmar Bay — a sun-baked crime story (3D)</title>
 <style>
-  html, body { margin: 0; padding: 0; background: #14100c; min-height: 100vh; }
-  body { display: grid; place-items: center; }
-  canvas { width: min(100vw, 177.78vh); height: min(100vh, 56.25vw); display: block; background: #1a0d06; }
+  html, body { margin: 0; padding: 0; background: #14100c; min-height: 100vh; overflow: hidden; }
+  body { display: grid; place-items: center; font-family: 'Segoe UI', system-ui, sans-serif; }
+  #wrap { position: relative; width: min(100vw, 177.78vh); height: min(100vh, 56.25vw); }
+  canvas#game { width: 100%; height: 100%; display: block; background: #1a0d06; }
+  .hud { position: absolute; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.8); pointer-events: none; z-index: 5; }
+  .panel { background: rgba(10,10,16,.62); border-radius: 8px; padding: 8px 12px; }
+  #hud-topleft { top: 12px; left: 12px; font-size: 22px; font-weight: 800; line-height: 1.25; }
+  #hud-topleft .stars { color: #ffd23f; font-size: 20px; letter-spacing: 2px; }
+  #hud-topleft .clock { color: #ffd23f; font-size: 15px; font-weight: 700; }
+  #minimap { position: absolute; top: 12px; right: 12px; width: 220px; height: 168px; border: 2px solid rgba(255,255,255,.35); border-radius: 6px; background: rgba(8,12,8,.85); z-index: 5; }
+  #hud-banner { top: 12px; left: 50%; transform: translateX(-50%); text-align: center; min-width: 420px; }
+  #hud-mission-title { color: #ffd23f; font-weight: 800; font-size: 17px; letter-spacing: .5px; }
+  #hud-mission-sub { font-size: 13px; opacity: .95; margin-top: 2px; }
+  #hud-dialog { bottom: 108px; left: 50%; transform: translateX(-50%); max-width: 640px; text-align: center; font-size: 15px; }
+  #hud-dialog-who { color: #ffd23f; font-weight: 800; }
+  #hud-passed { top: 38%; left: 50%; transform: translate(-50%, -50%); font-size: 34px; font-weight: 900; color: #7dff8a; text-shadow: 0 2px 10px rgba(0,0,0,.9); }
+  #hud-bottomleft { bottom: 12px; left: 12px; font-size: 15px; font-weight: 700; }
+  .bar { width: 170px; height: 12px; background: rgba(255,255,255,.22); border-radius: 6px; overflow: hidden; margin: 3px 0; }
+  .bar > div { height: 100%; background: #37d67a; }
+  #hud-car-fill { background: #5ec4d6; }
+  #hud-ammo { font-size: 17px; margin-top: 4px; }
+  #hud-bottomright { bottom: 12px; right: 12px; text-align: right; font-size: 15px; font-weight: 700; }
+  #hud-speed { font-size: 26px; font-weight: 900; }
+  #hud-hint { bottom: 12px; left: 50%; transform: translateX(-50%); font-size: 12px; opacity: .75; }
+  #wrap.title-mode .hud, #wrap.title-mode #minimap { display: none !important; }
+  .overlay { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; flex-direction: column; background: radial-gradient(ellipse at center, rgba(60,20,0,.55), rgba(10,5,0,.88)); color: #fff; text-align: center; z-index: 10; }
+  .overlay h1 { font-size: 84px; margin: 0; color: #ffd23f; letter-spacing: 4px; text-shadow: 0 4px 24px rgba(0,0,0,.8); }
+  .overlay h2 { font-size: 30px; margin: 4px 0 18px; color: #ff5a5a; letter-spacing: 6px; }
+  .overlay p { font-size: 17px; max-width: 560px; line-height: 1.5; }
+  .overlay button { pointer-events: auto; cursor: pointer; font-size: 19px; font-weight: 700; color: #fff; background: rgba(255,255,255,.16); border: 2px solid rgba(255,255,255,.4); border-radius: 10px; padding: 12px 34px; margin: 6px; }
+  .overlay button:hover { background: rgba(255,210,63,.35); }
+  #howto { display: none; font-size: 14px; background: rgba(0,0,0,.5); border-radius: 8px; padding: 10px 16px; margin-top: 10px; text-align: left; line-height: 1.7; }
+  #garage-menu { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); width: 560px; background: rgba(12,8,4,.92); border: 3px solid #ff8c1a; border-radius: 14px; color: #fff; padding: 20px 26px; z-index: 8; display: none; }
+  #garage-menu h2 { color: #ff8c1a; margin: 0 0 4px; font-size: 30px; text-align: center; letter-spacing: 2px; }
+  #garage-menu .g-sub { text-align: center; opacity: .85; font-size: 14px; }
+  #garage-cash { text-align: center; color: #7dff8a; font-weight: 800; font-size: 19px; margin: 8px 0 12px; }
+  .g-item { display: flex; justify-content: space-between; gap: 12px; padding: 10px 12px; border-radius: 8px; margin: 6px 0; background: rgba(255,255,255,.07); }
+  .g-item.sel { background: rgba(255,140,26,.3); outline: 2px solid #ff8c1a; }
+  .g-item b { font-size: 16px; }
+  .g-item span { opacity: .8; font-size: 13px; display: block; }
+  .g-item em { color: #ffd23f; font-style: normal; font-weight: 800; font-size: 17px; white-space: nowrap; }
+  .g-foot { text-align: center; font-size: 13px; opacity: .75; margin-top: 10px; }
 </style>
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.min.js" } }
+</script>
 </head>
 <body>
-<canvas id="game" width="1280" height="720"></canvas>
+<div id="wrap">
+  <canvas id="game" width="1280" height="720"></canvas>
+  <div id="hud-topleft" class="hud panel"><div id="hud-money">$0</div><div class="stars" id="hud-stars">☆☆☆☆☆</div><div class="clock" id="hud-clock">Day 1 17:40</div></div>
+  <canvas id="minimap"></canvas>
+  <div id="hud-banner" class="hud panel" style="display:none"><div id="hud-mission-title"></div><div id="hud-mission-sub"></div></div>
+  <div id="hud-dialog" class="hud panel" style="display:none"><span id="hud-dialog-who"></span>: <span id="hud-dialog-text"></span></div>
+  <div id="hud-passed" class="hud" style="display:none"><span id="hud-passed-text"></span></div>
+  <div id="hud-bottomleft" class="hud panel"><div>HEALTH</div><div class="bar"><div id="hud-hp-fill" style="width:100%"></div></div><div id="hud-car-row" style="display:none">CAR<div class="bar"><div id="hud-car-fill" style="width:100%"></div></div></div><div id="hud-ammo">PISTOL 12/24</div></div>
+  <div id="hud-bottomright" class="hud panel"><div id="hud-speed">— mph</div><div id="hud-radio">♪ SOLMAR FM 98.4 · C</div></div>
+  <div id="hud-hint" class="hud"></div>
+
+  <div id="title" class="overlay">
+    <h1>SOLMAR BAY</h1>
+    <p>A sun-baked crime story in 3D — Jax Marlowe takes the bay.<br>Steal cars. Outrun the law. Run eight jobs for Mara. Own the docks.</p>
+    <button id="btn-new">▶ NEW GAME</button>
+    <button id="btn-continue">↻ CONTINUE</button>
+    <button id="btn-how">? HOW TO PLAY</button>
+    <div id="howto">WASD / arrows — move or drive · E — enter / steal / exit car<br>F — punch · Mouse click — shoot · G — Benny's Garage (near it)<br>C — change radio · M — mute · P — pause · R — restart<br>An original game. No Rockstar content. Runs fully offline.</div>
+    <p style="opacity:.7;font-size:13px">An original game. No Rockstar content. Runs fully offline.</p>
+  </div>
+
+  <div id="garage-menu">
+    <h2>BENNY'S GARAGE</h2>
+    <div class="g-sub">Benny fixes anything — for the right price.</div>
+    <div id="garage-cash">Cash: $0</div>
+    <div id="garage-list"></div>
+    <div class="g-foot">↑ ↓ select &nbsp;·&nbsp; Enter buy &nbsp;·&nbsp; G close &nbsp;·&nbsp; Upgrades stay on every car you steal</div>
+  </div>
+
+  <div id="paused" class="overlay"><h2>PAUSED</h2><p>Press P to keep playing.</p></div>
+  <div id="busted" class="overlay"><h2>BUSTED</h2><p>The Bay PD caught up with you. Press R to try again.</p></div>
+  <div id="wasted" class="overlay"><h2>WASTED</h2><p>Solmar Bay is not done with you yet. Press R to try again.</p></div>
+  <div id="complete" class="overlay"><h1 style="font-size:56px">SOLMAR BAY IS YOURS</h1><p>All eight jobs done. Jax Marlowe owns the docks.</p></div>
+</div>
 <script type="module" src="./src/main.js"></script>
 </body>
 </html>

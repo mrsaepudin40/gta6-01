@@ -1,168 +1,246 @@
-// Solmar Bay city generation: grid roads, blocks, buildings, beach, parks, markers.
+// Solmar Bay 3D city: ground texture, road grid, buildings, beach + sea, palms, lamps, markers.
+import * as THREE from 'three';
 import { CFG, PAL } from './config.js';
-import { makeRng } from './random.js';
+import { makeRng, clamp } from './random.js';
 
-export function genWorld(seed) {
-  const rng = makeRng(seed);
-  const roadsX = [200, 600, 1000, 1400, 1800, 2200, 2600];
-  const roadsY = [200, 600, 1000, 1400, 1800, 2200];
-  const buildings = [];
-  const parks = [];
-  // Two park blocks, away from the beach.
-  const parkBlocks = new Set();
-  while (parkBlocks.size < 2) parkBlocks.add(rng.int(0, 5) + ':' + rng.int(0, 4));
-  for (let bx = 0; bx < roadsX.length; bx++) {
-    for (let by = 0; by < roadsY.length; by++) {
-      const x0 = roadsX[bx] + CFG.ROAD_W / 2 + 10;
-      const x1 = (bx + 1 < roadsX.length ? roadsX[bx + 1] : CFG.BEACH_X) - CFG.ROAD_W / 2 - 10;
-      const y0 = roadsY[by] + CFG.ROAD_W / 2 + 10;
-      const y1 = (by + 1 < roadsY.length ? roadsY[by + 1] : CFG.WORLD_H - 40) - CFG.ROAD_W / 2 - 10;
-      if (x1 - x0 < 90 || y1 - y0 < 90) continue;
-      if (parkBlocks.has(bx + ':' + by)) { parks.push({ x: x0, y: y0, w: x1 - x0, h: y1 - y0 }); continue; }
-      const n = rng.int(1, 3);
-      for (let i = 0; i < n; i++) {
-        const w = rng.range(70, Math.min(150, (x1 - x0) / n - 8));
-        const h = rng.range(60, Math.min(130, y1 - y0 - 8));
-        const x = x0 + (i * (x1 - x0)) / n + rng.range(4, Math.max(5, (x1 - x0) / n - w - 4));
-        const y = y0 + rng.range(4, Math.max(5, y1 - y0 - h - 4));
-        buildings.push({ x, y, w, h, color: rng.pick(PAL.buildings), hgt: rng.int(6, 16) });
-      }
-    }
-  }
-  const world = {
-    seed, roadsX, roadsY, buildings, parks,
-    markers: {
-      riverside: { x: 1000, y: 200, label: 'Riverside' },
-      docks: { x: 2720, y: 1000, label: 'Old Docks' },
-      safehouse: { x: 600, y: 1800, label: 'Safe House' },
-      hideout: { x: 2200, y: 2200, label: 'Hideout' },
-      hospital: { x: 1400, y: 600, label: 'Hospital' },
-      package: { x: 2720, y: 1000, label: 'Package' },
-      garage: { x: 1800, y: 1400, label: "Benny's Garage" },
-      beach: { x: 2960, y: 1400, label: 'Sunset Beach' },
-      bridge: { x: 2600, y: 200, label: 'Sunset Bridge' },
-      stashA: { x: 600, y: 600, label: 'Stash 1/3' },
-      stashB: { x: 2200, y: 600, label: 'Stash 2/3' },
-      stashC: { x: 1000, y: 1800, label: 'Stash 3/3' },
-    },
-  };
-  world.minimap = buildMinimap(world);
-  return world;
-}
+const ROAD_XS = [];
+for (let x = -1600; x <= 1600; x += CFG.BLOCK) ROAD_XS.push(x);
+const ROAD_ZS = [];
+for (let z = -1200; z <= 1200; z += CFG.BLOCK) ROAD_ZS.push(z);
 
-export function isRoad(world, x, y) {
+export function isRoad(x, z) {
   const hw = CFG.ROAD_W / 2;
-  for (const rx of world.roadsX) if (Math.abs(x - rx) <= hw) return true;
-  for (const ry of world.roadsY) if (Math.abs(y - ry) <= hw) return true;
+  for (const rx of ROAD_XS) if (Math.abs(x - rx) < hw) return true;
+  for (const rz of ROAD_ZS) if (Math.abs(z - rz) < hw) return true;
   return false;
 }
 
-export function nearestRoadCenter(world, x, y) {
-  let bx = world.roadsX[0], bd = Math.abs(x - bx);
-  for (const rx of world.roadsX) if (Math.abs(x - rx) < bd) { bd = Math.abs(x - rx); bx = rx; }
-  let by = world.roadsY[0]; bd = Math.abs(y - by);
-  for (const ry of world.roadsY) if (Math.abs(y - ry) < bd) { bd = Math.abs(y - ry); by = ry; }
-  return { x: bx, y: by };
+export function nearestRoadCenter(x, z) {
+  let bx = ROAD_XS[0], bz = ROAD_ZS[0];
+  for (const rx of ROAD_XS) if (Math.abs(x - rx) < Math.abs(x - bx)) bx = rx;
+  for (const rz of ROAD_ZS) if (Math.abs(z - rz) < Math.abs(z - bz)) bz = rz;
+  return Math.abs(x - bx) < Math.abs(z - bz) ? { x: bx, z } : { x, z: bz };
 }
 
-// Push a circle out of buildings. Returns {x, y, hit}.
-export function collideCircle(world, x, y, r) {
-  let hit = false;
-  for (const b of world.buildings) {
-    const cx = Math.max(b.x, Math.min(x, b.x + b.w));
-    const cy = Math.max(b.y, Math.min(y, b.y + b.h));
-    const dx = x - cx, dy = y - cy;
-    const d2 = dx * dx + dy * dy;
-    if (d2 < r * r) {
-      hit = true;
-      if (d2 > 0.01) {
-        const d = Math.sqrt(d2);
-        x = cx + (dx / d) * r; y = cy + (dy / d) * r;
-      } else {
-        y = b.y - r; // inside: push up
+function groundTexture(rng) {
+  const W = 2048, H = 1536;
+  const cv = document.createElement('canvas'); cv.width = W; cv.height = H;
+  const g = cv.getContext('2d');
+  const sx = W / CFG.WORLD_W, sz = H / CFG.WORLD_H;
+  const X = (x) => (x + CFG.WORLD_W / 2) * sx;
+  const Z = (z) => (z + CFG.WORLD_H / 2) * sz;
+  // grass
+  g.fillStyle = '#7fae5a'; g.fillRect(0, 0, W, H);
+  for (let i = 0; i < 900; i++) {
+    g.fillStyle = rng.chance(0.5) ? 'rgba(0,0,0,0.05)' : 'rgba(255,255,255,0.05)';
+    g.fillRect(rng.range(0, W), rng.range(0, H), rng.range(6, 26), rng.range(6, 26));
+  }
+  // park block (south-west)
+  g.fillStyle = '#5d8a48'; g.fillRect(X(-1200) + 8, Z(400) + 8, CFG.BLOCK - 16, CFG.BLOCK - 16);
+  // beach sand strip
+  g.fillStyle = '#e9cf8f'; g.fillRect(X(CFG.BEACH_X), 0, W - X(CFG.BEACH_X), H);
+  g.fillStyle = '#dfc07a'; g.fillRect(X(CFG.BEACH_X), 0, 26, H);
+  // roads
+  for (const rx of ROAD_XS) {
+    g.fillStyle = '#3d3d47'; g.fillRect(X(rx - CFG.ROAD_W / 2), 0, CFG.ROAD_W * sx, H);
+    g.fillStyle = '#b7b0a0';
+    g.fillRect(X(rx - CFG.ROAD_W / 2), 0, 5, H);
+    g.fillRect(X(rx + CFG.ROAD_W / 2) - 5, 0, 5, H);
+  }
+  for (const rz of ROAD_ZS) {
+    g.fillStyle = '#3d3d47'; g.fillRect(0, Z(rz - CFG.ROAD_W / 2), X(CFG.BEACH_X), CFG.ROAD_W * sz);
+    g.fillStyle = '#b7b0a0';
+    g.fillRect(0, Z(rz - CFG.ROAD_W / 2), X(CFG.BEACH_X), 5);
+    g.fillRect(0, Z(rz + CFG.ROAD_W / 2) - 5, X(CFG.BEACH_X), 5);
+  }
+  // lane dashes
+  g.fillStyle = '#d9d9c9';
+  for (const rx of ROAD_XS) for (let z = -1200; z < 1200; z += 60) g.fillRect(X(rx) - 2, Z(z), 4, 26);
+  for (const rz of ROAD_ZS) for (let x = -1600; x < CFG.BEACH_X; x += 60) g.fillRect(X(x), Z(rz) - 2, 26, 4);
+  const tex = new THREE.CanvasTexture(cv);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 4;
+  return tex;
+}
+
+function makePalm(rng) {
+  const grp = new THREE.Group();
+  const trunkMat = new THREE.MeshLambertMaterial({ color: 0x8a6b46 });
+  const leafMat = new THREE.MeshLambertMaterial({ color: 0x3f8a4a });
+  const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.55, 7, 6), trunkMat);
+  trunk.position.y = 3.5; trunk.rotation.z = rng.range(-0.08, 0.08);
+  grp.add(trunk);
+  for (let i = 0; i < 6; i++) {
+    const leaf = new THREE.Mesh(new THREE.ConeGeometry(1.1, 4.6, 4), leafMat);
+    const a = (i / 6) * Math.PI * 2;
+    leaf.position.set(Math.cos(a) * 1.6, 7.6, Math.sin(a) * 1.6);
+    leaf.rotation.set(Math.sin(a) * 1.1, 0, -Math.cos(a) * 1.1);
+    leaf.scale.set(1, 1, 0.28);
+    grp.add(leaf);
+  }
+  return grp;
+}
+
+export function buildWorld(scene) {
+  const rng = makeRng(CFG.WORLD_SEED);
+  const group = new THREE.Group();
+  const colliders = [];
+  const buildings = []; // {x,z,w,d,h,color} for minimap
+  const markers = {
+    riverside: { x: -1200, z: 800 },
+    docks: { x: -1600, z: -800 },
+    package: { x: -1600, z: -800 },
+    safehouse: { x: 400, z: 1200 },
+    hideout: { x: -400, z: -1200 },
+    garage: { x: -800, z: 400 },
+    beach: { x: 1200, z: 0 },
+    bridge: { x: 1200, z: -1200 },
+  };
+
+  // ground
+  const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(CFG.WORLD_W, CFG.WORLD_H),
+    new THREE.MeshLambertMaterial({ map: groundTexture(rng) })
+  );
+  ground.rotation.x = -Math.PI / 2;
+  group.add(ground);
+
+  // sea (east of the beach)
+  const sea = new THREE.Mesh(
+    new THREE.PlaneGeometry(700, CFG.WORLD_H + 600),
+    new THREE.MeshPhongMaterial({ color: PAL.water, shininess: 120, specular: 0xffd9a0, transparent: true, opacity: 0.94 })
+  );
+  sea.rotation.x = -Math.PI / 2;
+  sea.position.set(CFG.WATER_X + 350, 0.4, 0);
+  group.add(sea);
+
+  // sunset bridge deck over the water (NE)
+  const bridge = new THREE.Mesh(
+    new THREE.BoxGeometry(320, 2, 60),
+    new THREE.MeshLambertMaterial({ color: 0x8a6b46 })
+  );
+  bridge.position.set(CFG.WATER_X + 130, 3, -1200);
+  group.add(bridge);
+  const bridgeRail = new THREE.Mesh(
+    new THREE.BoxGeometry(320, 3, 2),
+    new THREE.MeshLambertMaterial({ color: 0xffd23f })
+  );
+  bridgeRail.position.set(CFG.WATER_X + 130, 5.5, -1172);
+  group.add(bridgeRail);
+
+  // buildings per block
+  const boxGeo = new THREE.BoxGeometry(1, 1, 1);
+  for (let bx = -1600; bx < 1600; bx += CFG.BLOCK) {
+    for (let bz = -1200; bz < 1200; bz += CFG.BLOCK) {
+      const cx = bx + CFG.BLOCK / 2, cz = bz + CFG.BLOCK / 2;
+      if (cx > CFG.BEACH_X - 100) continue; // beach: no buildings
+      if (bx === -1200 && bz === 400) continue; // park block
+      if (Math.abs(cx - markers.garage.x) < 220 && Math.abs(cz - markers.garage.z) < 220) continue; // garage lot
+      const n = rng.int(1, 3);
+      for (let i = 0; i < n; i++) {
+        const w = rng.range(55, 120), d = rng.range(55, 120);
+        const h = rng.range(12, 68);
+        const x = cx + rng.range(-90, 90), z = cz + rng.range(-90, 90);
+        const color = rng.pick(PAL.buildings);
+        const mat = new THREE.MeshLambertMaterial({ color });
+        const b = new THREE.Mesh(boxGeo, mat);
+        b.scale.set(w, h, d);
+        b.position.set(x, h / 2, z);
+        group.add(b);
+        const roof = new THREE.Mesh(boxGeo, new THREE.MeshLambertMaterial({ color: PAL.roof }));
+        roof.scale.set(w + 2, 1.6, d + 2);
+        roof.position.set(x, h + 0.8, z);
+        group.add(roof);
+        colliders.push({ minX: x - w / 2, maxX: x + w / 2, minZ: z - d / 2, maxZ: z + d / 2 });
+        buildings.push({ x, z, w, d, h, color });
       }
     }
   }
-  return { x, y, hit };
-}
 
-export function clampToWorld(x, y, m = 20) {
-  return { x: Math.max(m, Math.min(CFG.WORLD_W - m, x)), y: Math.max(m, Math.min(CFG.WORLD_H - m, y)) };
-}
+  // Benny's Garage — distinct orange-roof building + sign + beacon
+  const garage = new THREE.Mesh(boxGeo, new THREE.MeshLambertMaterial({ color: 0xd95f4b }));
+  garage.scale.set(130, 22, 90);
+  garage.position.set(markers.garage.x, 11, markers.garage.z);
+  group.add(garage);
+  const garageRoof = new THREE.Mesh(boxGeo, new THREE.MeshLambertMaterial({ color: 0xff8c1a }));
+  garageRoof.scale.set(134, 2, 94);
+  garageRoof.position.set(markers.garage.x, 23, markers.garage.z);
+  group.add(garageRoof);
+  colliders.push({ minX: markers.garage.x - 65, maxX: markers.garage.x + 65, minZ: markers.garage.z - 45, maxZ: markers.garage.z + 45 });
+  buildings.push({ x: markers.garage.x, z: markers.garage.z, w: 130, d: 90, h: 22, color: 0xd95f4b });
+  const beaconMat = new THREE.MeshBasicMaterial({ color: 0xff8c1a });
+  const beacon = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.2, 60, 8), beaconMat);
+  beacon.position.set(markers.garage.x, 30, markers.garage.z - 60);
+  group.add(beacon);
 
-function buildMinimap(world) {
-  const c = document.createElement('canvas');
-  c.width = 320; c.height = 240;
-  const g = c.getContext('2d');
-  const sx = 320 / CFG.WORLD_W, sy = 240 / CFG.WORLD_H;
-  g.fillStyle = PAL.grass; g.fillRect(0, 0, 320, 240);
-  g.fillStyle = PAL.sand; g.fillRect(CFG.BEACH_X * sx, 0, (CFG.WORLD_W - CFG.BEACH_X) * sx, 240);
-  g.fillStyle = PAL.water; g.fillRect(CFG.WATER_X * sx, 0, (CFG.WORLD_W - CFG.WATER_X) * sx, 240);
-  g.fillStyle = PAL.asphalt;
-  for (const rx of world.roadsX) g.fillRect((rx - CFG.ROAD_W / 2) * sx, 0, CFG.ROAD_W * sx, 240);
-  for (const ry of world.roadsY) g.fillRect(0, (ry - CFG.ROAD_W / 2) * sy, 320, CFG.ROAD_W * sy);
-  for (const p of world.parks) { g.fillStyle = PAL.park; g.fillRect(p.x * sx, p.y * sy, p.w * sx, p.h * sy); }
-  for (const b of world.buildings) { g.fillStyle = b.color; g.fillRect(b.x * sx, b.y * sy, b.w * sx, b.h * sy); }
-  return c;
-}
-
-export function drawWorld(ctx, cam, world) {
-  const vx0 = cam.x - CFG.VIEW_W / 2 - 60, vy0 = cam.y - CFG.VIEW_H / 2 - 60;
-  const vx1 = cam.x + CFG.VIEW_W / 2 + 60, vy1 = cam.y + CFG.VIEW_H / 2 + 60;
-  ctx.fillStyle = PAL.grass;
-  ctx.fillRect(vx0, vy0, vx1 - vx0, vy1 - vy0);
-  // Beach + water (east edge).
-  ctx.fillStyle = PAL.sand;
-  ctx.fillRect(Math.max(vx0, CFG.BEACH_X), vy0, Math.min(vx1, CFG.WORLD_W) - Math.max(vx0, CFG.BEACH_X), vy1 - vy0);
-  ctx.fillStyle = PAL.water;
-  ctx.fillRect(Math.max(vx0, CFG.WATER_X), vy0, Math.min(vx1, CFG.WORLD_W) - Math.max(vx0, CFG.WATER_X), vy1 - vy0);
-  ctx.fillStyle = PAL.waterDeep;
-  for (let y = Math.max(0, Math.floor(vy0 / 90)) * 90; y < vy1; y += 90) {
-    ctx.fillRect(Math.max(vx0, CFG.WATER_X + 30), y + 20, 120, 3);
+  // palms along the beach + scattered
+  const palmPositions = [];
+  for (let z = -1100; z <= 1100; z += 140) palmPositions.push([CFG.BEACH_X - 40 + rng.range(-15, 15), z]);
+  for (let i = 0; i < 26; i++) palmPositions.push([rng.range(-1500, 1300), rng.range(-1100, 1100)]);
+  for (const [x, z] of palmPositions) {
+    if (isRoad(x, z)) continue;
+    const p = makePalm(rng);
+    p.position.set(x, 0, z);
+    p.rotation.y = rng.range(0, Math.PI * 2);
+    group.add(p);
   }
-  // Parks.
-  for (const p of world.parks) {
-    if (p.x > vx1 || p.x + p.w < vx0 || p.y > vy1 || p.y + p.h < vy0) continue;
-    ctx.fillStyle = PAL.park; ctx.fillRect(p.x, p.y, p.w, p.h);
-    ctx.fillStyle = PAL.parkTree;
-    for (let i = 0; i < 5; i++) {
-      const tx = p.x + 20 + ((i * 53) % Math.max(30, p.w - 40));
-      const ty = p.y + 18 + ((i * 37) % Math.max(30, p.h - 36));
-      ctx.beginPath(); ctx.arc(tx, ty, 12, 0, Math.PI * 2); ctx.fill();
+
+  // street lamps at intersections
+  const lampMat = new THREE.MeshLambertMaterial({ color: 0x222222 });
+  const bulbMat = new THREE.MeshBasicMaterial({ color: 0xffe9a8 });
+  for (const rx of ROAD_XS) for (const rz of ROAD_ZS) {
+    if (rx > CFG.BEACH_X - 100) continue;
+    if (rng.chance(0.35)) continue;
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 11, 6), lampMat);
+    pole.position.set(rx + CFG.ROAD_W / 2 + 4, 5.5, rz + CFG.ROAD_W / 2 + 4);
+    group.add(pole);
+    const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.9, 8, 6), bulbMat);
+    bulb.position.set(rx + CFG.ROAD_W / 2 + 4, 11.4, rz + CFG.ROAD_W / 2 + 4);
+    group.add(bulb);
+  }
+
+  // mission marker beacon (yellow pillar, moved by missions.js)
+  const markerMesh = new THREE.Mesh(
+    new THREE.CylinderGeometry(3, 3, 90, 10, 1, true),
+    new THREE.MeshBasicMaterial({ color: PAL.marker, transparent: true, opacity: 0.35, side: THREE.DoubleSide, depthWrite: false })
+  );
+  markerMesh.position.set(markers.riverside.x, 45, markers.riverside.z);
+  group.add(markerMesh);
+
+  scene.add(group);
+  return { group, markers, colliders, buildings, beacon, markerMesh };
+}
+
+export function clampToWorld(x, z) {
+  return {
+    x: clamp(x, -CFG.WORLD_W / 2 + 20, CFG.WORLD_W / 2 - 20),
+    z: clamp(z, -CFG.WORLD_H / 2 + 20, CFG.WORLD_H / 2 - 20),
+  };
+}
+
+// Push a circle (x,z,r) out of building colliders. Returns corrected {x,z}.
+export function collideCircle(world, x, z, r) {
+  for (const c of world.colliders) {
+    const cx = clamp(x, c.minX, c.maxX);
+    const cz = clamp(z, c.minZ, c.maxZ);
+    const dx = x - cx, dz = z - cz;
+    const d2 = dx * dx + dz * dz;
+    if (d2 < r * r) {
+      if (d2 > 0.0001) {
+        const d = Math.sqrt(d2);
+        x = cx + (dx / d) * r;
+        z = cz + (dz / d) * r;
+      } else {
+        // center inside the box: push out along the smallest penetration axis
+        const pl = x - (c.minX - r), pr = (c.maxX + r) - x;
+        const pt = z - (c.minZ - r), pb = (c.maxZ + r) - z;
+        const m = Math.min(pl, pr, pt, pb);
+        if (m === pl) x = c.minX - r;
+        else if (m === pr) x = c.maxX + r;
+        else if (m === pt) z = c.minZ - r;
+        else z = c.maxZ + r;
+      }
     }
   }
-  // Roads.
-  ctx.fillStyle = PAL.asphalt;
-  for (const rx of world.roadsX) {
-    if (rx + CFG.ROAD_W / 2 < vx0 || rx - CFG.ROAD_W / 2 > vx1) continue;
-    ctx.fillRect(rx - CFG.ROAD_W / 2, vy0, CFG.ROAD_W, vy1 - vy0);
-  }
-  for (const ry of world.roadsY) {
-    if (ry + CFG.ROAD_W / 2 < vy0 || ry - CFG.ROAD_W / 2 > vy1) continue;
-    ctx.fillRect(vx0, ry - CFG.ROAD_W / 2, vx1 - vx0, CFG.ROAD_W);
-  }
-  // Lane dashes.
-  ctx.fillStyle = PAL.lane;
-  for (const rx of world.roadsX) {
-    if (rx < vx0 || rx > vx1) continue;
-    for (let y = Math.max(vy0, 0); y < vy1; y += 46) ctx.fillRect(rx - 2, y, 4, 24);
-  }
-  for (const ry of world.roadsY) {
-    if (ry < vy0 || ry > vy1) continue;
-    for (let x = Math.max(vx0, 0); x < vx1; x += 46) ctx.fillRect(x, ry - 2, 24, 4);
-  }
-  // Buildings with sun shadows (light from the south-west: shadow to north-east).
-  for (const b of world.buildings) {
-    if (b.x > vx1 || b.x + b.w < vx0 || b.y > vy1 || b.y + b.h < vy0) continue;
-    ctx.fillStyle = PAL.buildingShadow;
-    ctx.fillRect(b.x + b.hgt, b.y - b.hgt, b.w, b.h);
-    ctx.fillStyle = b.color;
-    ctx.fillRect(b.x, b.y, b.w, b.h);
-    ctx.fillStyle = 'rgba(255,255,255,0.16)';
-    ctx.fillRect(b.x, b.y, b.w, 5);
-    ctx.fillStyle = 'rgba(0,0,0,0.18)';
-    for (let wx = b.x + 10; wx < b.x + b.w - 12; wx += 22) {
-      for (let wy = b.y + 10; wy < b.y + b.h - 12; wy += 24) ctx.fillRect(wx, wy, 10, 12);
-    }
-  }
+  return clampToWorld(x, z);
 }

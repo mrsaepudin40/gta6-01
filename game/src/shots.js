@@ -1,108 +1,84 @@
-// Deterministic ?shot= scenes for screenshots: ?shot=chase|start|night|garage&seed=N
+// Deterministic ?shot= scenes: ?shot=chase|start|night|garage&seed=N
+import * as THREE from 'three';
 import { CFG } from './config.js';
-import { makeRng, hashSeed } from './random.js';
-import { genWorld } from './world.js';
-import { makeCar } from './entities.js';
-import { spawnTraffic, spawnPeds } from './traffic.js';
+import { makeCarMesh, makeCopCarMesh } from './entities.js';
+import { makeCarState } from './car.js';
 import { startMission } from './missions.js';
+import { makePlayer } from './player.js';
 
-export function applyShot(game, name, seedStr) {
-  const seed = hashSeed(seedStr || name);
-  game.rng = makeRng(seed);
-  game.world = genWorld(seed);
-  game.trafficCars = spawnTraffic(game.world, game.rng, 12);
-  game.peds = spawnPeds(game.world, game.rng, 22);
-  game.parkedCars = spawnParked(game);
-  game.cops = []; game.copCars = []; game.enemies = [];
-  game.bullets = []; game.particles = []; game.tireMarks = [];
-  game.heat = 0; game.wanted = 0; game.arrestT = 0;
-  game.lastCrimeT = 1e9; // shots keep their wanted level (no decay during the scene)
-  game.shotDrive = false;
-  game.mission.idx = -1; game.mission.started = false; game.mission.completed = false;
-  game.night = false;
-  game.resultBanner = null;
-  const p = game.player;
-  p.hp = CFG.PLAYER_HP; p.inCar = null; p.fireCd = 0;
-  p.ammoMag = 12; p.ammoRes = 24;
-
-  if (name === 'start') {
-    game.state = 'title';
-    game.clockDay = 1; game.clockMins = 17 * 60;
-    p.x = 1400; p.y = 1000;
-    return;
-  }
-  if (name === 'garage') {
-    // Benny's Garage menu open: upgrades visible, cash on hand.
-    game.upgrades = { engine: 1, armor: 0 };
-    p.money = 1850;
-    p.x = 1800; p.y = 1400;
-    game.cam.x = 1800; game.cam.y = 1400;
-    game.clockDay = 1; game.clockMins = 17 * 60 + 40;
-    game.garageSel = 1;
-    game.state = 'garage';
-    return;
-  }
-  if (name === 'night') {
-    // On-foot Night Shift: dark city, pistol ammo, 1 star, stash marker ahead.
-    p.x = 1400; p.y = 1000; p.angle = 0; p.aim = 0;
-    p.money = 1240;
-    game.clockDay = 1; game.clockMins = 21 * 60 + 47;
-    const cop = makeCar(2200, 1000, 0, 'police', 'police');
-    cop.speed = 200;
-    game.copCars.push(cop);
-    startMission(game, 5);
-    game.heat = 20;
-    game.lastCrimeT = 1e9;
-    game.state = 'playing';
-    return;
-  }
-  if (name === 'chase') {
-    // Cover: 4-star police chase, dense HUD (clock, radio, mission banner, timer, distance).
-    const car = makeCar(1400, 1000, 0, 'sport', 'player');
-    car.speed = 320;
-    p.inCar = car; p.x = car.x; p.y = car.y;
-    p.money = 4820;
-    game.clockDay = 1; game.clockMins = 18 * 60 + 24;
-    game.shotDrive = true;
-    for (let i = 0; i < 3; i++) {
-      const cop = makeCar(1400 - 140 - i * 90, 1000 + (i % 2 === 0 ? 24 : -24), 0, 'police', 'police');
-      cop.speed = 300;
-      game.copCars.push(cop);
-    }
-    game.trafficCars.forEach((tc, i) => {
-      // Clear the player's road: traffic waits on the southern avenues.
-      tc.x = 400 + i * 180; tc.y = 1800 + (i % 2) * 400; tc.angle = i % 2 === 0 ? 0 : Math.PI; tc.speed = tc.cruise;
-    });
-    startMission(game, 6);
-    game.mission.timer = 74;
-    game.heat = 80; // 4 stars: mission 6 already added 80; keep 80 total
-    game.lastCrimeT = 1e9;
-    game.state = 'playing';
-    return;
-  }
-  // Default: on-foot mission at the docks.
-  p.x = 2600; p.y = 1000; p.angle = 0; p.aim = 0;
-  game.heat = 20;
-  const cop = makeCar(2200, 1000, 0, 'police', 'police');
-  cop.speed = 200;
-  game.copCars.push(cop);
-  startMission(game, 1);
-  game.state = 'playing';
+function setClock(game, day, hh, mm) {
+  game.day = day;
+  game.clockMin = hh * 60 + mm;
 }
 
-function spawnParked(game) {
-  const cars = [];
-  const kinds = ['sedan', 'taxi', 'pickup', 'van', 'sport'];
-  for (let i = 0; i < 9; i++) {
-    const vertical = game.rng.chance(0.5);
-    const road = vertical
-      ? game.rng.pick(game.world.roadsX)
-      : game.rng.pick(game.world.roadsY);
-    const along = game.rng.range(220, (vertical ? CFG.WORLD_H : CFG.WORLD_W) - 220);
-    const x = vertical ? road + 34 : along;
-    const y = vertical ? along : road + 34;
-    const angle = vertical ? Math.PI / 2 : 0;
-    cars.push(makeCar(x, y, angle, game.rng.pick(kinds), 'parked'));
+function putPlayerInCar(game, x, z, heading, sport, speed) {
+  const mesh = makeCarMesh(sport ? 0x3fa7d6 : 0xc94f43, { sport });
+  game.scene.add(mesh);
+  const st = makeCarState(x, z, heading, { mesh, sport, max: sport ? CFG.CAR_MAX_SPORT : CFG.CAR_MAX, kind: sport ? 'sport' : 'sedan' });
+  st.speed = speed || 0;
+  game.player.inCar = st;
+  game.player.mesh.visible = false;
+  return st;
+}
+
+function addCop(game, x, z, heading, speed) {
+  const mesh = makeCopCarMesh();
+  game.scene.add(mesh);
+  const st = makeCarState(x, z, heading, { mesh, max: CFG.CAR_MAX + 2, accel: CFG.CAR_ACCEL + 6, kind: 'police' });
+  st.speed = speed || 0;
+  game.police.cars.push(st);
+  return st;
+}
+
+export function applyShot(game, name, seed) {
+  game.shotMode = name;
+  const p = game.player;
+  p.money = 0; p.hp = CFG.PLAYER_HP;
+  game.police.heat = 0;
+  game.night = false;
+  if (name === 'chase') {
+    // 4-star police chase, Mission 7/8 The Last Bridge, dense HUD
+    // Player on road x=800 heading north (-Z) so the auto-drive stays on the road.
+    game.state = 'playing';
+    p.money = 4870;
+    setClock(game, 1, 18, 25);
+    putPlayerInCar(game, 800, -200, Math.PI, true, 30);
+    // police flanking in convoy formation (held by updatePolice in shot mode)
+    // slightly AHEAD of the player: the chase camera sits 12u behind, so
+    // anything behind the player is behind the camera too.
+    addCop(game, 780, -218, Math.PI, 28);
+    addCop(game, 820, -218, Math.PI, 26);
+    addCop(game, 845, -232, Math.PI, 27);
+    game.police.heat = 80;
+    startMission(game, 6);
+    game.mission.timer = 72;
+    game.mission.marker = { ...game.world.markers.bridge };
+  } else if (name === 'start') {
+    // title screen over the city (fixed cinematic camera in main.js)
+    game.state = 'title';
+    setClock(game, 1, 17, 40);
+    p.x = 0; p.z = 200;
+    p.mesh.position.set(0, 0, 200);
+    game.titleCam = { x: 620, y: 300, z: 980, tx: 0, ty: 20, tz: 0 };
+  } else if (name === 'night') {
+    // Night Shift on foot at night, 1 star, pistol ammo
+    game.state = 'playing';
+    p.money = 1240;
+    setClock(game, 1, 21, 48);
+    game.night = true;
+    p.x = 0; p.z = 0; p.heading = 0;
+    p.mesh.position.set(0, 0, 0);
+    game.police.heat = 20;
+    startMission(game, 5);
+    game.combat.ammo = 12; game.combat.reserve = 24;
+  } else if (name === 'garage') {
+    // Benny's Garage menu open
+    game.state = 'playing';
+    p.money = 1850;
+    setClock(game, 1, 17, 40);
+    p.x = -800; p.z = 330; p.heading = Math.PI;
+    p.mesh.position.set(-800, 0, 330);
+    game.garage.open = true;
+    game.garage.sel = 1;
   }
-  return cars;
 }
