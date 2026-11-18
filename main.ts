@@ -1,1 +1,29 @@
-{"shots":[{"description":"Cover: low-camera sunset police chase on the beach road, Mission 7/8 The Last Bridge, 4 stars, helicopter, dense Halcyon-style HUD","file":"1-chase.jpg","seed":"chase","shot":"chase"},{"description":"Title screen: big sunset sun, beach umbrellas, skyline, SOLMAR BAY, menu + HOW TO PLAY + character row","file":"2-title.jpg","seed":"title","shot":"title"},{"description":"Daytime market shootout: bright afternoon, crowded plaza, Jax firing at Rico's crew, thick tracers + muzzle flash + smoke, fleeing crowd, cops + heli, Mission 8/8 Showdown","file":"3-shootout.jpg","seed":"shootout","shot":"shootout"},{"description":"Fullscreen city map: story list 8 jobs + legend + stats, route to objective, district labels","file":"4-map.jpg","seed":"map","shot":"map"}]}
+// Solmar Bay — entrypoint (Node 22, standard library only).
+// Copies game/ and screenshots/ into the output directory and writes dossier.json
+// with the same caps the bounty's scorer uses.
+import { cpSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { buildDossier } from './vendor/makefun-game.ts';
+
+const root = resolve(fileURLToPath(new URL('.', import.meta.url)));
+const out = resolve(process.env.MAKEFUN_OUTPUT_DIR ?? '/output');
+
+mkdirSync(out, { recursive: true });
+cpSync(join(root, 'game'), join(out, 'game'), { recursive: true });
+
+const shotsDir = join(root, 'screenshots');
+if (existsSync(shotsDir)) {
+  cpSync(shotsDir, join(out, 'screenshots'), { recursive: true });
+}
+
+const dossier = buildDossier(out, {
+  text_max_bytes: 163840,
+  screenshots: { max: 4, max_bytes: 262144 },
+  game_max_files: 993,
+  game_max_bytes: 50331648,
+  game_path_max_bytes: 1000,
+});
+
+writeFileSync(join(out, 'dossier.json'), dossier);
+console.log(`wrote ${join(out, 'dossier.json')} (${dossier.length} bytes)`);
