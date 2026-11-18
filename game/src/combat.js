@@ -8,7 +8,7 @@ import { audio } from './audio.js';
 import { addHeat } from './police.js';
 
 export function newCombatState() {
-  return { tracers: [], flashT: 0, fireT: 0, punchT: 0, enemyFireT: 0 };
+  return { tracers: [], flashT: 0, flashDir: null, fireT: 0, punchT: 0, enemyFireT: 0 };
 }
 
 function tracerLine(game, from, to, color) {
@@ -24,6 +24,7 @@ export function fireShot(game, from, dir, opts = {}) {
   p.ammo -= 1;
   audio.shot();
   game.combat.flashT = 0.09;
+  game.combat.flashDir = { x: dir.x, z: dir.z };
   const end = new THREE.Vector3(from.x + dir.x * CFG.BULLET_RANGE, 2.2, from.z + dir.z * CFG.BULLET_RANGE);
   // hit the first enemy near the line
   let hit = null, hitD = CFG.BULLET_RANGE;

@@ -1,6 +1,7 @@
 // Deterministic ?shot= scenes for the 4 dossier screenshots.
 // chase: low-camera sunset police chase (cover) · night: neon shootout
 // map: fullscreen city map · title: title screen over the beach at sunset.
+import * as THREE from 'three';
 import { setNight } from './world.js';
 import { makeCar } from './car.js';
 import { buildPed, buildCopCar, buildHeli } from './entities.js';
@@ -44,7 +45,11 @@ export function applyShot(game, name, seed) {
     game.state = 'playing';
   } else if (name === 'night') {
     // Neon night shootout on the z=-400 road, facing east: Rico's crew stands
-    // in front of the CLUB SOLMAR neon sign (120, -360).
+    // off the road centreline, in front of the CLUB SOLMAR neon sign (120, -360).
+    // Lateral offset is deliberate: dead-ahead targets make the tracers
+    // edge-on to the camera (invisible); offset targets give diagonal fire
+    // lines across the frame. A warm practical light makes the crew readable
+    // at night (street lighting alone leaves Standard-material peds black).
     setNight(game.world, 1);
     game.clock.hour = 21; game.clock.minute = 42;
     p.money = 9850;
@@ -54,10 +59,13 @@ export function applyShot(game, name, seed) {
     startMission(game, 7); // Showdown
     game.mission.stage = 1;
     addHeat(game, 40);
+    const shootLight = new THREE.PointLight(0xffb36b, 1500, 160, 2);
+    shootLight.position.set(55, 12, -375);
+    game.scene.add(shootLight);
     const defs = [
-      { x: 60, z: -400, hp: 100, rico: false },
-      { x: 90, z: -392, hp: 100, rico: false },
-      { x: 118, z: -382, hp: 220, rico: true },
+      { x: 38, z: -376, hp: 100, rico: false },
+      { x: 56, z: -368, hp: 100, rico: false },
+      { x: 72, z: -382, hp: 220, rico: true },
     ];
     for (const d of defs) {
       const mesh = buildPed(d.rico ? 0xe05a5a : 0x2f8f7a);

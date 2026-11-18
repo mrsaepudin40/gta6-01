@@ -85,7 +85,7 @@ function radialTex(inner, outer) {
 const flashTex = radialTex('rgba(255,240,170,1)', 'rgba(255,160,40,0)');
 const smokeTex = radialTex('rgba(120,120,120,0.55)', 'rgba(120,120,120,0)');
 const flash = new THREE.Sprite(new THREE.SpriteMaterial({ map: flashTex, transparent: true, opacity: 0, depthWrite: false }));
-flash.scale.set(7, 7, 1);
+flash.scale.set(3, 3, 1);
 scene.add(flash);
 const smokes = [];
 game.effects = {
@@ -131,10 +131,11 @@ function updateCamera(dt) {
     look = new THREE.Vector3(c.x + fx * 12, 1.2, c.z + fz * 12);
     camera.fov = lerp(camera.fov, 62 + clamp(Math.abs(c.speed) / 50, 0, 1) * 7, dt * 3);
   } else {
-    // on-foot camera pulled back: the 3.65-unit player model filled the frame at 5.5
+    // on-foot camera pulled well back: the 3.65-unit player model still filled
+    // a third of the frame at 10.5 (night-scene check)
     const fx = Math.sin(p.angle), fz = Math.cos(p.angle);
-    target = new THREE.Vector3(p.x - fx * 10.5, 3.2, p.z - fz * 10.5);
-    look = new THREE.Vector3(p.x + fx * 11, 1.8, p.z + fz * 11);
+    target = new THREE.Vector3(p.x - fx * 16, 3.8, p.z - fz * 16);
+    look = new THREE.Vector3(p.x + fx * 12, 2.0, p.z + fz * 12);
     camera.fov = lerp(camera.fov, 58, dt * 3);
     game.cameraYaw = p.angle + Math.PI;
   }
@@ -336,11 +337,12 @@ function animate() {
       }
       // prompt text
       game.promptText = stealPrompt(game) || (garageNear(game) ? '[G] Benny\'s Garage' : '');
-      // muzzle flash follows the player while firing
+      // muzzle flash sits at the gun, offset along the last shot direction
       flash.material.opacity = game.combat.flashT > 0 ? 0.95 : 0;
       if (game.combat.flashT > 0) {
         const p = game.player;
-        flash.position.set(p.x, 2.4, p.z);
+        const d = game.combat.flashDir || { x: Math.sin(p.angle), z: Math.cos(p.angle) };
+        flash.position.set(p.x + d.x * 2.4, 2.4, p.z + d.z * 2.4);
       }
       // smoke puffs
       for (let i = smokes.length - 1; i >= 0; i--) {

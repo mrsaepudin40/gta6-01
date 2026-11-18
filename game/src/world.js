@@ -247,7 +247,9 @@ export function buildWorld(scene) {
     return p;
   }
   neonSign("BENNY'S GARAGE", '#ff9a3c', -800, 16, 748, 0, 52);
-  neonSign('CLUB SOLMAR', '#ff5fa2', 120, 20, -360, 0, 46);
+  // CLUB SOLMAR faces the z=-400 road (ry=PI): the night shootout is staged
+  // on that road, and with ry=0 the sign showed mirrored from the road.
+  neonSign('CLUB SOLMAR', '#ff5fa2', 120, 20, -360, Math.PI, 46);
   neonSign('HOTEL MARINA', '#54e0ff', 1150, 26, -520, Math.PI / 2, 48);
   neonSign('BAR · SOLMAR', '#7dff8a', -420, 14, 360, Math.PI, 34);
   // garage building (orange, distinct)
