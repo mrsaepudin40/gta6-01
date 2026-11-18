@@ -222,6 +222,21 @@ function labelClamped(g, text, x, y, S) {
   g.fillText(text, Math.max(w / 2 + 4, Math.min(S - w / 2 - 4, x)), y);
 }
 
+// outlined label: dark stroke behind bright text (or vice versa) — readable on
+// any background, never a blurry small caption. Clamped to the canvas.
+function labelOutlined(g, text, x, y, S, fill = '#ffffff', stroke = 'rgba(0,0,0,0.8)', font = 'bold 15px Arial') {
+  g.save();
+  g.font = font; g.textAlign = 'center';
+  const w = g.measureText(text).width;
+  const cx = Math.max(w / 2 + 4, Math.min(S - w / 2 - 4, x));
+  g.lineWidth = 4; g.lineJoin = 'round';
+  g.strokeStyle = stroke;
+  g.strokeText(text, cx, y);
+  g.fillStyle = fill;
+  g.fillText(text, cx, y);
+  g.restore();
+}
+
 // ---------- minimap (bright, round, legible) ----------
 function drawMinimap(game) {
   const cv = $('minimap');
@@ -245,9 +260,9 @@ function drawMinimap(game) {
   g.strokeStyle = '#ffffff'; g.lineWidth = 4;
   for (const z of [-800, -400, 0, 400, 800]) { g.beginPath(); g.moveTo(0, sz(z)); g.lineTo(S, sz(z)); g.stroke(); }
   for (const x of [-1200, -800, -400, 0, 400, 800, 1200]) { g.beginPath(); g.moveTo(sx(x), 0); g.lineTo(sx(x), S); g.stroke(); }
-  // district labels
-  g.fillStyle = '#5a4632'; g.font = 'bold 9px Arial'; g.textAlign = 'center';
-  for (const d of DISTRICTS) labelClamped(g, d.name, sx((d.x0 + d.x1) / 2), sz((d.z0 + d.z1) / 2), S);
+  // district labels: bigger, outlined, high contrast
+  g.textAlign = 'center';
+  for (const d of DISTRICTS) labelOutlined(g, d.name, sx((d.x0 + d.x1) / 2), sz((d.z0 + d.z1) / 2), S, '#4a3626', 'rgba(255,255,255,0.85)', 'bold 11px Arial');
   // route to objective
   const p = game.player;
   const px = p.inCar ? p.inCar.x : p.x, pz = p.inCar ? p.inCar.z : p.z;
@@ -393,20 +408,53 @@ function drawBigMap(game) {
   for (let bx = -1600; bx < 1400; bx += 400) for (let bz = -1200; bz < 1200; bz += 400) {
     g.fillRect(sx(bx + 50), sz(bz + 50), ((400 - 100) / W) * S, ((400 - 100) / H) * S);
   }
+  // main roads (white, high contrast)
   g.strokeStyle = '#ffffff'; g.lineWidth = 5;
   for (const z of [-800, -400, 0, 400, 800]) { g.beginPath(); g.moveTo(0, sz(z)); g.lineTo(S, sz(z)); g.stroke(); }
   for (const x of [-1200, -800, -400, 0, 400, 800, 1200]) { g.beginPath(); g.moveTo(sx(x), 0); g.lineTo(sx(x), S); g.stroke(); }
-  g.fillStyle = '#ffffff'; g.font = 'bold 15px Arial'; g.textAlign = 'center';
-  g.shadowColor = 'rgba(0,0,0,0.7)'; g.shadowBlur = 4;
-  for (const d of DISTRICTS) labelClamped(g, d.name, sx((d.x0 + d.x1) / 2), sz((d.z0 + d.z1) / 2), S);
-  g.shadowBlur = 0;
-  // landmark labels
-  g.fillStyle = '#ffe9c4'; g.font = 'bold 11px Arial';
+  // inner street grid inside every block (thin, so districts read as a real city)
+  g.strokeStyle = 'rgba(255,255,255,0.35)'; g.lineWidth = 1.5;
+  for (let x = -1500; x <= 1500; x += 100) { g.beginPath(); g.moveTo(sx(x), 0); g.lineTo(sx(x), S); g.stroke(); }
+  for (let z = -1100; z <= 1100; z += 100) { g.beginPath(); g.moveTo(0, sz(z)); g.lineTo(S, sz(z)); g.stroke(); }
+  // park (green block, northside-west)
+  g.fillStyle = '#3f7a44';
+  g.fillRect(sx(-1150), sz(450), sx(-850) - sx(-1150), sz(750) - sz(450));
+  g.fillStyle = '#5a9e4a';
+  g.beginPath(); g.arc(sx(-1000), sz(600), 14, 0, Math.PI * 2); g.fill();
+  labelOutlined(g, 'PARK', sx(-1000), sz(600) + 30, S, '#e8ffe8', 'rgba(0,0,0,0.7)', 'bold 11px Arial');
+  // district labels: big, outlined, high contrast. SUNSET BEACH is a narrow
+  // strip, so its name goes on two lines — never clipped at the canvas edge.
+  g.textAlign = 'center';
+  for (const d of DISTRICTS) {
+    const cx = sx((d.x0 + d.x1) / 2), cy = sz((d.z0 + d.z1) / 2);
+    if (d.name === 'SUNSET BEACH') {
+      labelOutlined(g, 'SUNSET', cx, cy - 8, S, '#ffffff', 'rgba(0,0,0,0.8)', 'bold 14px Arial');
+      labelOutlined(g, 'BEACH', cx, cy + 10, S, '#ffffff', 'rgba(0,0,0,0.8)', 'bold 14px Arial');
+    } else {
+      labelOutlined(g, d.name, cx, cy, S, '#ffffff', 'rgba(0,0,0,0.8)', 'bold 17px Arial');
+    }
+  }
+  // landmarks: colored dot + letter + outlined label (readable at a glance)
   const landmarks = [
-    ['HOSPITAL', -1200, 400], ['SAFEHOUSE', -400, 800], ['OLD DOCKS', -1400, -800],
-    ['HIDEOUT', 400, -800], ['FERRY', 1400, 800],
+    ['HOSPITAL', 'H', '#ff5f6d', -1200, 400],
+    ['SAFEHOUSE', 'S', '#7dff8a', -400, 800],
+    ['OLD DOCKS', 'D', '#c9a0dc', -1400, -800],
+    ['HIDEOUT', 'H', '#ffd23f', 400, -800],
+    ['FERRY', 'F', '#54e0ff', 1400, 800],
+    ['MARKET', 'M', '#ff9a3c', 300, 470],
+    ['POLICE', 'P', '#2248c8', 0, -400],
+    ['HELIPAD', 'H', '#ff5fa2', 800, -800],
+    ['MARINA', 'M', '#35b6dd', 1200, -600],
   ];
-  for (const [t, x, z] of landmarks) labelClamped(g, t, sx(x), sz(z) + 18, S);
+  for (const [t, letter, col, x, z] of landmarks) {
+    g.fillStyle = col;
+    g.beginPath(); g.arc(sx(x), sz(z), 9, 0, Math.PI * 2); g.fill();
+    g.strokeStyle = 'rgba(255,255,255,0.9)'; g.lineWidth = 2;
+    g.beginPath(); g.arc(sx(x), sz(z), 9, 0, Math.PI * 2); g.stroke();
+    g.fillStyle = '#ffffff'; g.font = 'bold 11px Arial';
+    g.fillText(letter, sx(x), sz(z) + 4);
+    labelOutlined(g, t, sx(x), sz(z) + 24, S, '#ffe9c4', 'rgba(0,0,0,0.8)', 'bold 12px Arial');
+  }
   // route + markers
   const p = game.player;
   const px = p.inCar ? p.inCar.x : p.x, pz = p.inCar ? p.inCar.z : p.z;
@@ -422,7 +470,8 @@ function drawBigMap(game) {
   g.fillStyle = '#fff'; g.font = 'bold 12px Arial'; g.fillText('G', sx(-800), sz(800) + 4);
   g.fillStyle = '#1d9e4b';
   g.beginPath(); g.moveTo(sx(px), sz(pz) - 12); g.lineTo(sx(px) + 10, sz(pz) + 8); g.lineTo(sx(px) - 10, sz(pz) + 8); g.closePath(); g.fill();
-  g.fillStyle = '#fff'; g.font = 'bold 12px Arial'; g.fillText('YOU', sx(px), sz(pz) + 26);
+  g.fillStyle = '#fff'; g.font = 'bold 12px Arial';
+  labelOutlined(g, 'YOU', sx(px), sz(pz) + 26, S, '#ffffff', 'rgba(0,0,0,0.8)', 'bold 12px Arial');
 }
 
 // ---------- SOLMAR OS phone (Esc) ----------

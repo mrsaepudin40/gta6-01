@@ -85,7 +85,7 @@ function radialTex(inner, outer) {
 const flashTex = radialTex('rgba(255,240,170,1)', 'rgba(255,160,40,0)');
 const smokeTex = radialTex('rgba(120,120,120,0.55)', 'rgba(120,120,120,0)');
 const flash = new THREE.Sprite(new THREE.SpriteMaterial({ map: flashTex, transparent: true, opacity: 0, depthWrite: false }));
-flash.scale.set(3, 3, 1);
+flash.scale.set(3.5, 3.5, 1);
 scene.add(flash);
 const smokes = [];
 game.effects = {
@@ -98,8 +98,25 @@ game.effects = {
   },
 };
 
+// ---- golden dust motes drifting in the sunset air (follows the player) ----
+const DUST_N = 220;
+const dustGeo = new THREE.BufferGeometry();
+{
+  const pos = new Float32Array(DUST_N * 3);
+  const rngD = mulberry32(777);
+  for (let i = 0; i < DUST_N; i++) {
+    pos[i * 3] = range(rngD, -130, 130);
+    pos[i * 3 + 1] = range(rngD, 1, 42);
+    pos[i * 3 + 2] = range(rngD, -130, 130);
+  }
+  dustGeo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+}
+const dustMat = new THREE.PointsMaterial({ color: 0xffd9a0, size: 1.2, transparent: true, opacity: 0.35, depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true, map: radialTex('rgba(255,217,160,1)', 'rgba(255,217,160,0)') });
+const dust = new THREE.Points(dustGeo, dustMat);
+scene.add(dust);
+
 // ---- sun follows the player so shadows stay crisp ----
-const SUN_DIR = new THREE.Vector3(-1, 0.38, -0.28).normalize();
+const SUN_DIR = new THREE.Vector3(-1, 0.30, -0.28).normalize();
 function updateSun() {
   const p = game.player;
   const px = p.inCar ? p.inCar.x : p.x, pz = p.inCar ? p.inCar.z : p.z;
@@ -374,6 +391,21 @@ function animate() {
     writeSave(game);
   }
 
+  // dust motes: drift with the wind, wrap inside the box, follow the player
+  {
+    const dp = dustGeo.attributes.position;
+    for (let i = 0; i < DUST_N; i++) {
+      let x = dp.getX(i) + dt * 2.2;
+      let y = dp.getY(i) + Math.sin(game.time * 0.7 + i) * dt * 0.4;
+      if (x > 130) x = -130;
+      if (y < 1) y = 42; if (y > 42) y = 1;
+      dp.setX(i, x); dp.setY(i, y);
+    }
+    dp.needsUpdate = true;
+    const pp = game.player;
+    dust.position.set(pp.inCar ? pp.inCar.x : pp.x, 0, pp.inCar ? pp.inCar.z : pp.z);
+    dustMat.opacity = 0.5 * (1 - game.world.nightF * 0.8);
+  }
   updateSun();
   updateCamera(dt);
   updateHud(game);

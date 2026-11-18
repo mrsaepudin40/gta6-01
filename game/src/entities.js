@@ -9,9 +9,12 @@ const SPORT_COLORS = [0xff2e88, 0xffc93c, 0x54e0ff, 0xe05a5a];
 
 export function buildCar(color, sport = false) {
   const car = new THREE.Group();
-  // glossy paint: high metalness + low roughness reads as a waxed sports car
+  // glossy paint: moderate metalness + a touch of the paint color as emissive,
+  // so the color still reads on the shadow side (high metalness + no env map
+  // turned the pink sports car dark brown from behind)
   const bodyMat = new THREE.MeshStandardMaterial({
-    color, roughness: sport ? 0.18 : 0.35, metalness: sport ? 0.75 : 0.45,
+    color, roughness: sport ? 0.3 : 0.4, metalness: sport ? 0.35 : 0.3,
+    emissive: color, emissiveIntensity: sport ? 0.25 : 0.15,
   });
   const glassMat = new THREE.MeshStandardMaterial({ color: 0x18242e, roughness: 0.15, metalness: 0.7 });
   const body = new THREE.Mesh(new THREE.BoxGeometry(4.4, 1.5, 2.2), bodyMat);

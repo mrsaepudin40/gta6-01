@@ -57,13 +57,58 @@ function glowTexture() {
 }
 
 function sunTexture() {
+  // Detailed sun disc: white-hot granulated core, bright rim, crisp edge.
+  const c = document.createElement('canvas');
+  c.width = c.height = 256;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(128, 128, 2, 128, 128, 126);
+  grad.addColorStop(0, 'rgba(255,252,235,1)');
+  grad.addColorStop(0.16, 'rgba(255,244,196,1)');
+  grad.addColorStop(0.26, 'rgba(255,207,107,0.98)');
+  grad.addColorStop(0.32, 'rgba(255,154,60,0.95)');
+  grad.addColorStop(0.36, 'rgba(255,120,40,0.55)');
+  grad.addColorStop(0.45, 'rgba(255,110,40,0)');
+  g.fillStyle = grad; g.fillRect(0, 0, 256, 256);
+  // granulation: darker speckles in the core so the disc is not flat
+  const rng = mulberry32(7);
+  for (let i = 0; i < 90; i++) {
+    const a = rng() * Math.PI * 2, r = Math.sqrt(rng()) * 26;
+    g.fillStyle = `rgba(255,180,80,${0.12 + rng() * 0.25})`;
+    g.beginPath(); g.arc(128 + Math.cos(a) * r, 128 + Math.sin(a) * r, 1 + rng() * 2.2, 0, Math.PI * 2); g.fill();
+  }
+  // bright rim ring
+  g.strokeStyle = 'rgba(255,240,190,0.9)'; g.lineWidth = 3;
+  g.beginPath(); g.arc(128, 128, 40, 0, Math.PI * 2); g.stroke();
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+function haloTexture() {
   return canvasTex(256, 256, (g, w, h) => {
-    const grad = g.createRadialGradient(128, 128, 8, 128, 128, 126);
-    grad.addColorStop(0, 'rgba(255,240,200,1)');
-    grad.addColorStop(0.25, 'rgba(255,190,100,0.95)');
-    grad.addColorStop(0.6, 'rgba(255,140,60,0.4)');
-    grad.addColorStop(1, 'rgba(255,120,40,0)');
+    const grad = g.createRadialGradient(128, 128, 6, 128, 128, 126);
+    grad.addColorStop(0, 'rgba(255,214,140,0.85)');
+    grad.addColorStop(0.35, 'rgba(255,170,80,0.35)');
+    grad.addColorStop(0.7, 'rgba(255,130,60,0.12)');
+    grad.addColorStop(1, 'rgba(255,120,50,0)');
     g.fillStyle = grad; g.fillRect(0, 0, w, h);
+  });
+}
+
+function streakTexture() {
+  // wide, thin horizontal flare streak
+  return canvasTex(512, 64, (g, w, h) => {
+    const grad = g.createLinearGradient(0, 0, w, 0);
+    grad.addColorStop(0, 'rgba(255,180,90,0)');
+    grad.addColorStop(0.5, 'rgba(255,210,130,0.85)');
+    grad.addColorStop(1, 'rgba(255,180,90,0)');
+    g.fillStyle = grad; g.fillRect(0, 0, w, h);
+    const vg = g.createLinearGradient(0, 0, 0, h);
+    vg.addColorStop(0, 'rgba(255,180,90,0)');
+    vg.addColorStop(0.5, 'rgba(255,210,130,0.5)');
+    vg.addColorStop(1, 'rgba(255,180,90,0)');
+    g.globalCompositeOperation = 'destination-in';
+    g.fillStyle = vg; g.fillRect(0, 0, w, h);
   });
 }
 
@@ -81,16 +126,17 @@ function frondTexture() {
   });
 }
 
-// Sunset sky dome: pink-purple top fading to orange at the horizon.
+// Sunset sky dome: blazing orange horizon → coral → pink → deep violet zenith.
 // The dome (not the flat scene background) is what the camera actually sees.
 function skyTexture() {
   return canvasTex(16, 512, (g, w, h) => {
     const grad = g.createLinearGradient(0, 0, 0, h);
-    grad.addColorStop(0.0, '#7a4fd0'); // violet zenith
-    grad.addColorStop(0.35, '#c65f9e'); // pink-purple
-    grad.addColorStop(0.6, '#ff7a6e'); // coral
-    grad.addColorStop(0.78, '#ffb36b'); // orange horizon
-    grad.addColorStop(1.0, '#ffd9a0'); // warm haze
+    grad.addColorStop(0.0, '#5a3fa8'); // deep violet zenith
+    grad.addColorStop(0.28, '#b84f9e'); // pink-purple
+    grad.addColorStop(0.5, '#ff6e5e'); // coral
+    grad.addColorStop(0.68, '#ff9a3c'); // blazing orange
+    grad.addColorStop(0.84, '#ffc36b'); // golden horizon
+    grad.addColorStop(1.0, '#ffe6b0'); // warm haze
     g.fillStyle = grad; g.fillRect(0, 0, w, h);
   });
 }
@@ -146,7 +192,7 @@ export function buildWorld(scene) {
 
   const sea = new THREE.Mesh(
     new THREE.PlaneGeometry(1400, CFG.WORLD_H + 1600),
-    new THREE.MeshPhongMaterial({ color: PAL.water, shininess: 140, specular: 0x99ddff, transparent: true, opacity: 0.96 }));
+    new THREE.MeshPhongMaterial({ color: PAL.water, shininess: 200, specular: 0xffd9a0, transparent: true, opacity: 0.96 }));
   sea.rotation.x = -Math.PI / 2; sea.position.set(2300, 0.4, 0);
   g.add(sea);
 
@@ -160,9 +206,9 @@ export function buildWorld(scene) {
     world.skyDome = dome;
   }
 
-  // ---- roads: sidewalk base + shiny asphalt + markings + zebra ----
+  // ---- roads: sidewalk base + asphalt with a soft sun sheen + markings + zebra ----
   // matte asphalt: Phong specular painted a giant sun-glint wedge on the road
-  const roadMat = new THREE.MeshStandardMaterial({ color: PAL.asphalt, roughness: 0.95 });
+  const roadMat = new THREE.MeshStandardMaterial({ color: PAL.asphalt, roughness: 0.8, metalness: 0.08 });
   const walkMat = new THREE.MeshStandardMaterial({ color: PAL.sidewalk, roughness: 0.9 });
   const lineWhite = new THREE.MeshBasicMaterial({ color: 0xf5f2e8 });
   const lineYellow = new THREE.MeshBasicMaterial({ color: 0xf2c14e });
@@ -173,13 +219,13 @@ export function buildWorld(scene) {
   }
   function dashLine(x0, z0, x1, z1, mat) {
     const len = Math.hypot(x1 - x0, z1 - z0);
-    const n = Math.floor(len / 24);
+    const n = Math.floor(len / 16);
     for (let i = 0; i < n; i += 2) {
-      const t0 = i / n, t1 = (i + 0.9) / n;
+      const t0 = i / n, t1 = (i + 0.5) / n;
       const ax = x0 + (x1 - x0) * t0, az = z0 + (z1 - z0) * t0;
       const bx = x0 + (x1 - x0) * t1, bz = z0 + (z1 - z0) * t1;
       const seg = Math.hypot(bx - ax, bz - az);
-      const m = new THREE.Mesh(new THREE.PlaneGeometry(1.6, seg), mat);
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(0.7, seg), mat);
       m.rotation.x = -Math.PI / 2;
       m.rotation.z = Math.atan2(bx - ax, bz - az);
       m.position.set((ax + bx) / 2, 0.12, (az + bz) / 2);
@@ -220,7 +266,7 @@ export function buildWorld(scene) {
   function addBuilding(x, z, w, d, h, texIdx) {
     const tex = facadeTexs[texIdx % facadeTexs.length];
     const mat = new THREE.MeshStandardMaterial({
-      map: tex, emissiveMap: tex, emissive: 0xffc27a, emissiveIntensity: 0.18, roughness: 0.75,
+      map: tex, emissiveMap: tex, emissive: 0xffc27a, emissiveIntensity: 0.32, roughness: 0.75,
     });
     world.facadeMats.push(mat);
     const b = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
@@ -321,11 +367,18 @@ export function buildWorld(scene) {
       new THREE.MeshBasicMaterial({ map: shopTexture('SOLMAR BAY', '#ffd23f'), transparent: true, side: THREE.DoubleSide }));
     bb.position.set(1250, 32, -70); bb.rotation.y = Math.PI / 2; g.add(bb);
   }
+  // ---- market square pavement (the shootout plaza: paved, not empty grass) ----
+  {
+    const sq = new THREE.Mesh(new THREE.PlaneGeometry(460, 70),
+      new THREE.MeshStandardMaterial({ color: PAL.sidewalk, roughness: 0.9 }));
+    sq.rotation.x = -Math.PI / 2; sq.position.set(250, 0.04, 470);
+    sq.receiveShadow = true; g.add(sq);
+  }
   // ---- market stalls with striped awnings (downtown, z=400 road) ----
   {
-    const stallCols = [['#ff5f6d', '#f2e8c8'], ['#54e0ff', '#f2e8c8'], ['#ffd23f', '#e05a5a']];
-    for (let i = 0; i < 3; i++) {
-      const sx = 180 + i * 130, sz = 470;
+    const stallCols = [['#ff5f6d', '#f2e8c8'], ['#54e0ff', '#f2e8c8'], ['#ffd23f', '#e05a5a'], ['#7dff8a', '#f2e8c8'], ['#c77dff', '#f2e8c8']];
+    for (let i = 0; i < 5; i++) {
+      const sx = 60 + i * 95, sz = 470;
       const counter = new THREE.Mesh(new THREE.BoxGeometry(22, 6, 10),
         new THREE.MeshStandardMaterial({ color: 0x8a5a3a, roughness: 0.9 }));
       counter.position.set(sx, 3, sz); counter.castShadow = true; g.add(counter);
@@ -363,8 +416,8 @@ export function buildWorld(scene) {
       arm.rotation.z = Math.PI / 2; arm.position.set(x - 3, 15.6, z + 52); g.add(arm);
       const bulb = new THREE.Mesh(new THREE.SphereGeometry(1.6, 10, 8), lampBulbMat);
       bulb.position.set(x - 6, 15.2, z + 52); g.add(bulb);
-      const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, transparent: true, opacity: 0.25, depthWrite: false }));
-      spr.scale.set(16, 16, 1); spr.position.set(x - 6, 15.2, z + 52); g.add(spr);
+      const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, transparent: true, opacity: 0.42, depthWrite: false }));
+      spr.scale.set(22, 22, 1); spr.position.set(x - 6, 15.2, z + 52); g.add(spr);
       world.lampGlows.push(spr.material);
     }
   }
@@ -418,14 +471,27 @@ export function buildWorld(scene) {
     g.add(b);
   }
 
-  // ---- sun: low disc sprite + directional light with shadows ----
-  const sunSpr = new THREE.Sprite(new THREE.SpriteMaterial({ map: sunTexture(), transparent: true, opacity: 0.95, depthWrite: false, fog: false }));
-  sunSpr.scale.set(520, 520, 1);
+  // ---- sun: detailed disc + halo + flare streak + directional light with shadows ----
+  // Disc: crisp granulated core (sunTexture). Halo: huge soft additive glow.
+  // Streak: wide horizontal anamorphic flare. Together they read as a blazing
+  // late-afternoon sun, not a flat orange circle.
+  const sunSpr = new THREE.Sprite(new THREE.SpriteMaterial({ map: sunTexture(), transparent: true, opacity: 0.98, depthWrite: false, fog: false }));
+  sunSpr.scale.set(430, 430, 1);
   sunSpr.position.set(-1500, 190, -350);
   scene.add(sunSpr);
   world.sunSprite = sunSpr;
+  const sunHalo = new THREE.Sprite(new THREE.SpriteMaterial({ map: haloTexture(), transparent: true, opacity: 0.55, depthWrite: false, fog: false, blending: THREE.AdditiveBlending }));
+  sunHalo.scale.set(1500, 1500, 1);
+  sunHalo.position.copy(sunSpr.position);
+  scene.add(sunHalo);
+  world.sunHalo = sunHalo;
+  const sunStreak = new THREE.Sprite(new THREE.SpriteMaterial({ map: streakTexture(), transparent: true, opacity: 0.4, depthWrite: false, fog: false, blending: THREE.AdditiveBlending }));
+  sunStreak.scale.set(1700, 130, 1);
+  sunStreak.position.copy(sunSpr.position);
+  scene.add(sunStreak);
+  world.sunStreak = sunStreak;
 
-  const sun = new THREE.DirectionalLight(0xffb36b, 2.7);
+  const sun = new THREE.DirectionalLight(0xffb36b, 3.0);
   sun.castShadow = true;
   sun.shadow.mapSize.set(2048, 2048);
   sun.shadow.camera.left = -280; sun.shadow.camera.right = 280;
@@ -434,6 +500,13 @@ export function buildWorld(scene) {
   sun.shadow.bias = -0.0006;
   scene.add(sun); scene.add(sun.target);
   world.sunLight = sun;
+
+  // warm fill from the east: lifts the shadow sides of cars and peds so the
+  // pink sports car still reads pink from behind (camera looks into the sun).
+  const fill = new THREE.DirectionalLight(0xffd9a0, 0.55);
+  fill.position.set(700, 260, 200);
+  scene.add(fill); scene.add(fill.target);
+  world.fillLight = fill;
 
   const hemi = new THREE.HemisphereLight(0xffd9a0, 0x4a3b32, 0.95);
   scene.add(hemi);
@@ -459,15 +532,22 @@ export function buildWorld(scene) {
 }
 
 // Day <-> night lighting. f: 0 = sunset, 1 = night.
+// Night sky is REAL dark blue: the dome color lerps from white to deep navy,
+// so the pink-purple sunset gradient is fully suppressed at night.
+const NIGHT_SKY = new THREE.Color(0x0e1633);
+const DAY_SKY = new THREE.Color(0xffffff);
 export function setNight(world, f) {
   world.nightF = f;
   const sun = world.sunLight;
-  sun.intensity = 2.7 - f * 2.1;
+  sun.intensity = 3.0 - f * 2.4;
   sun.color.setHex(f > 0.5 ? 0x8fa8ff : 0xffb36b);
   world.hemi.intensity = 0.95 - f * 0.55;
   world.hemi.color.setHex(f > 0.5 ? 0x2a3560 : 0xffd9a0);
-  for (const m of world.facadeMats) m.emissiveIntensity = 0.18 + f * 1.05;
-  for (const m of world.lampGlows) m.opacity = 0.25 + f * 0.6;
-  world.sunSprite.material.opacity = 0.95 - f * 0.9;
-  if (world.skyDome) world.skyDome.material.color.setScalar(1 - f * 0.72);
+  if (world.fillLight) world.fillLight.intensity = 0.55 - f * 0.43;
+  for (const m of world.facadeMats) m.emissiveIntensity = 0.32 + f * 0.95;
+  for (const m of world.lampGlows) m.opacity = 0.42 + f * 0.5;
+  world.sunSprite.material.opacity = 0.98 - f * 0.95;
+  if (world.sunHalo) world.sunHalo.material.opacity = 0.55 * (1 - f);
+  if (world.sunStreak) world.sunStreak.material.opacity = 0.4 * (1 - f);
+  if (world.skyDome) world.skyDome.material.color.copy(DAY_SKY).lerp(NIGHT_SKY, f);
 }

@@ -1,14 +1,17 @@
 // Deterministic ?shot= scenes for the 4 dossier screenshots.
-// chase: low-camera sunset police chase (cover) · night: neon shootout
-// map: fullscreen city map · title: title screen over the beach at sunset.
+// chase: low-camera sunset police chase (cover) · shootout: bright daytime
+// market shootout, crowded plaza · map: fullscreen city map · title: title
+// screen over the beach at sunset.
 import * as THREE from 'three';
 import { setNight } from './world.js';
 import { makeCar } from './car.js';
-import { buildCrewMember, buildCopCar, buildHeli } from './entities.js';
-import { startMission, say } from './missions.js';
+import { buildCrewMember, buildCopCar, buildHeli, buildPed } from './entities.js';
+import { startMission } from './missions.js';
 import { addHeat } from './police.js';
 import { fireShot } from './combat.js';
 import { openMap, showTitle } from './hud.js';
+import { PAL } from './config.js';
+import { mulberry32, range, pick } from './random.js';
 
 export function applyShot(game, name, seed) {
   game.shotMode = name;
@@ -43,40 +46,79 @@ export function applyShot(game, name, seed) {
       game.scene.add(game.police.heli);
     }
     game.state = 'playing';
-  } else if (name === 'night') {
-    // Neon night shootout on the z=-400 road, facing east: Rico's crew stands
-    // off the road centreline, in front of the CLUB SOLMAR neon sign (120, -360).
+  } else if (name === 'shootout') {
+    // BRIGHT DAYTIME shootout on the downtown market road (z=400). Jax stands
+    // ON the asphalt facing east into Rico's crew; market stalls + shops flank
+    // the road, 24 market peds flee on the sidewalks (never between camera and
+    // Jax), parked cars as cover, cops + heli in frame. Chapter 8 SHOWDOWN —
+    // same mission, daytime crowded stage instead of the empty night docks.
     // Lateral offset is deliberate: dead-ahead targets make the tracers
     // edge-on to the camera (invisible); offset targets give diagonal fire
-    // lines across the frame. A warm practical light makes the crew readable
-    // at night (street lighting alone leaves Standard-material peds black).
-    setNight(game.world, 1);
-    game.clock.hour = 21; game.clock.minute = 42;
+    // lines across the frame.
+    setNight(game.world, 0);
+    game.clock.hour = 16; game.clock.minute = 30;
     p.money = 9850;
-    p.x = 0; p.z = -400; p.angle = Math.PI / 2;
+    p.hp = 10000; // scene player is invulnerable: no BUSTED mid-render
+    p.x = 60; p.z = 400; p.angle = Math.PI / 2; // on the road, facing east (+x)
     p.mesh.position.set(p.x, 0, p.z);
+    p.mesh.rotation.y = p.angle;
     p.ammo = 23; p.reserve = 160; p.weapon = 'WASP SMG';
     startMission(game, 7); // Showdown
     game.mission.stage = 1;
-    addHeat(game, 40);
-    const shootLight = new THREE.PointLight(0xffb36b, 1500, 160, 2);
-    shootLight.position.set(55, 12, -375);
-    game.scene.add(shootLight);
+    addHeat(game, 60); // 3 stars
+    // Rico's crew on the road ahead: 2 close enough to return fire (<55u)
     const defs = [
-      { x: 38, z: -376, hp: 100, rico: false },
-      { x: 56, z: -368, hp: 100, rico: false },
-      { x: 72, z: -382, hp: 220, rico: true },
+      { x: 95, z: 394, hp: 100, rico: false },
+      { x: 105, z: 408, hp: 100, rico: false },
+      { x: 130, z: 396, hp: 100, rico: false },
+      { x: 150, z: 406, hp: 220, rico: true },
     ];
     for (const d of defs) {
       const mesh = buildCrewMember(d.rico);
       mesh.position.set(d.x, 0, d.z);
-      mesh.rotation.y = Math.PI; // face the player (camera sees their fronts)
+      mesh.rotation.y = -Math.PI / 2; // face west, toward Jax
       game.scene.add(mesh);
       // invulnerable during the scene: tracers + return fire show, nobody dies,
       // so the Showdown can never complete into the victory screen
-      game.enemies.push({ mesh, x: d.x, z: d.z, hp: d.hp, dead: false, rico: d.rico, fireT: 0.5, invuln: true });
+      game.enemies.push({ mesh, x: d.x, z: d.z, hp: d.hp, dead: false, rico: d.rico, fireT: 0.4, invuln: true });
     }
-    say(game, 'Rico', 'Jax Marlowe. You should have stayed away from my docks.', 6);
+    // crowded market: 24 peds fleeing on the sidewalks + around the stalls.
+    // Kept in game.shotPeds so updateShot can re-scare them and clamp them
+    // inside the frame — and never west of x=70, i.e. never between camera
+    // and Jax.
+    const rng = mulberry32(2026);
+    game.shotPeds = [];
+    for (let i = 0; i < 24; i++) {
+      const mesh = buildPed(pick(rng, PAL.ped));
+      const band = rng();
+      const x = range(rng, 75, 320);
+      const z = band < 0.4 ? range(rng, 372, 386) : band < 0.75 ? range(rng, 414, 428) : range(rng, 448, 484);
+      mesh.position.set(x, 0, z);
+      mesh.rotation.y = range(rng, 0, Math.PI * 2);
+      game.scene.add(mesh);
+      const ped = { mesh, x, z, horizontal: true, line: z, dir: 1, speed: 2, flee: 2.5, fx: range(rng, -1, 1), fz: range(rng, -1, 1), shotPed: true };
+      game.peds.push(ped);
+      game.shotPeds.push(ped);
+    }
+    // parked cars as cover near the crew (off the direct fire line)
+    for (const [cx, cz, col] of [[95, 416, 0xf2f2f2], [145, 388, 0xd23c3c]]) {
+      const c = makeCar(cx, cz, Math.PI / 2, false, col);
+      game.scene.add(c.mesh);
+    }
+    // 2 cop cars + heli, pinned by updateShot so they never ram Jax
+    game.police.stars = 3;
+    for (const [cx, cz] of [[195, 390], [165, 414]]) {
+      const mesh = buildCopCar();
+      mesh.position.set(cx, 0, cz);
+      mesh.rotation.y = Math.PI / 2;
+      game.scene.add(mesh);
+      game.police.copCars.push({ mesh, x: cx, z: cz, angle: Math.PI / 2, speed: 0 });
+    }
+    if (!game.police.heli) {
+      game.police.heli = buildHeli();
+      game.scene.add(game.police.heli);
+    }
+    game.police.heli.position.set(130, 30, 400);
     game.state = 'playing';
   } else if (name === 'map') {
     setNight(game.world, 0);
@@ -124,7 +166,7 @@ export function updateShot(game, dt) {
     // keep the helicopter ahead-left in frame (updatePolice would hover it behind the camera)
     const h = game.police.heli;
     if (h) h.position.set(car.x - 55, 34, car.z + 26);
-  } else if (game.shotMode === 'night' && game.state === 'playing') {
+  } else if (game.shotMode === 'shootout' && game.state === 'playing') {
     // looped fire at the nearest living enemy
     game.combat.fireT -= dt;
     if (game.combat.fireT <= 0) {
@@ -135,6 +177,32 @@ export function updateShot(game, dt) {
         fireShot(game, { x: p.x, z: p.z }, { x: (e.x - p.x) / d, z: (e.z - p.z) / d }, { silent: true });
         p.ammo = Math.max(8, p.ammo);
         game.combat.fireT = 0.18;
+      }
+    }
+    // pin the cop cars + heli so the formation never breaks up
+    const pin = [[195, 390], [165, 414]];
+    game.police.copCars.forEach((c, i) => {
+      const [cx, cz] = pin[i % pin.length];
+      c.x = cx; c.z = cz;
+      c.mesh.position.set(cx, 0, cz);
+      c.mesh.rotation.y = Math.PI / 2;
+    });
+    const h = game.police.heli;
+    if (h) h.position.set(130, 30, 400);
+    // keep the market crowd scared and inside the frame (fear pose = arms up)
+    game._scareT = (game._scareT || 0) - dt;
+    if (game._scareT <= 0 && game.shotPeds) {
+      game._scareT = 2;
+      for (const ped of game.shotPeds) {
+        // clamp back into the plaza if the flee drifted them out — never west
+        // of x=70, so nobody ends up between the camera and Jax
+        ped.x = Math.max(72, Math.min(318, ped.x));
+        ped.z = Math.max(368, Math.min(486, ped.z));
+        ped.flee = 2.5;
+        // flee sideways along the street, away from the gunfire line
+        ped.fx = Math.random() < 0.5 ? -1 : 1;
+        ped.fz = (Math.random() - 0.5) * 0.8;
+        ped.mesh.position.set(ped.x, 0, ped.z);
       }
     }
   }

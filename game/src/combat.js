@@ -1,5 +1,6 @@
 // Combat: hitscan shooting with tracers + muzzle flash, punch, enemies,
-// Rico's showdown crew. Tracers are thin lines that read on dark asphalt.
+// Rico's showdown crew. Tracers are glowing CYLINDERS (not 1px lines) so they
+// stay readable in bright daylight.
 import * as THREE from 'three';
 import { CFG } from './config.js';
 import { buildCrewMember, animatePed } from './entities.js';
@@ -11,11 +12,32 @@ export function newCombatState() {
   return { tracers: [], flashT: 0, flashDir: null, fireT: 0, punchT: 0, enemyFireT: 0 };
 }
 
+const TRACER_GEO = new THREE.CylinderGeometry(0.18, 0.18, 1, 6, 1, true);
+const IMPACT_TEX = (() => {
+  const c = document.createElement('canvas'); c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(32, 32, 2, 32, 32, 30);
+  grad.addColorStop(0, 'rgba(255,240,170,1)'); grad.addColorStop(1, 'rgba(255,160,40,0)');
+  g.fillStyle = grad; g.fillRect(0, 0, 64, 64);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+})();
 function tracerLine(game, from, to, color) {
-  const geo = new THREE.BufferGeometry().setFromPoints([from, to]);
-  const line = new THREE.Line(geo, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.95 }));
-  game.scene.add(line);
-  game.combat.tracers.push({ line, t: 0.4 });
+  const dir = new THREE.Vector3().subVectors(to, from);
+  const len = dir.length();
+  const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.95, blending: THREE.AdditiveBlending, depthWrite: false });
+  const mesh = new THREE.Mesh(TRACER_GEO, mat);
+  mesh.scale.set(1, len, 1);
+  mesh.position.copy(from).addScaledVector(dir, 0.5);
+  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir.clone().normalize());
+  game.scene.add(mesh);
+  game.combat.tracers.push({ obj: mesh, t: 0.4 });
+  // impact glow at the far end
+  const hit = new THREE.Sprite(new THREE.SpriteMaterial({ map: IMPACT_TEX, transparent: true, opacity: 0.85, depthWrite: false, blending: THREE.AdditiveBlending }));
+  hit.scale.set(4, 4, 1);
+  hit.position.copy(to);
+  game.scene.add(hit);
+  game.combat.tracers.push({ obj: hit, t: 0.22 });
 }
 
 export function fireShot(game, from, dir, opts = {}) {
@@ -45,6 +67,8 @@ export function fireShot(game, from, dir, opts = {}) {
     }
   }
   tracerLine(game, new THREE.Vector3(from.x, 2.4, from.z), end, opts.color ?? 0xffe066);
+  // muzzle smoke puff (reads in daylight, lingers a beat)
+  if (game.effects) game.effects.smoke(from.x + dir.x * 2.5, from.z + dir.z * 2.5);
   if (!opts.silent) addHeat(game, 2);
 }
 
@@ -118,12 +142,12 @@ export function updateCombat(game, dt) {
   // fade tracers
   for (const t of c.tracers) {
     t.t -= dt;
-    t.line.material.opacity = Math.max(0, t.t / 0.4);
+    t.obj.material.opacity = Math.max(0, t.t / 0.4);
   }
   while (c.tracers.length && c.tracers[0].t <= 0) {
     const t = c.tracers.shift();
-    game.scene.remove(t.line);
-    t.line.geometry.dispose();
+    game.scene.remove(t.obj);
+    if (t.obj.geometry && t.obj.geometry !== TRACER_GEO) t.obj.geometry.dispose();
   }
   // enemies: walk at the player + shoot back
   const p = game.player;
