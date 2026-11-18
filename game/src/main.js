@@ -123,21 +123,37 @@ function updateSun() {
   game.world.sunLight.position.set(px + SUN_DIR.x * 700, SUN_DIR.y * 700, pz + SUN_DIR.z * 700);
   game.world.sunLight.target.position.set(px, 0, pz);
   game.world.sunLight.target.updateMatrixWorld();
+  // lens-flare ghosts: strung along the sun -> camera line, so they track
+  // the sun's screen position from any camera angle
+  if (game.world.sunGhosts) {
+    const sp = game.world.sunSprite.position;
+    for (const g of game.world.sunGhosts) {
+      g.spr.position.set(
+        sp.x + (camera.position.x - sp.x) * g.t,
+        sp.y + (camera.position.y - sp.y) * g.t,
+        sp.z + (camera.position.z - sp.z) * g.t);
+      g.spr.material.opacity = g.baseOp * (1 - game.world.nightF);
+    }
+  }
 }
 
 // ---- camera: LOW + CLOSE behind the player (the Halcyon look) ----
-const camPos = new THREE.Vector3(1300, 130, 300);
-const camLook = new THREE.Vector3(-300, 50, -150);
+// Shot scenes frame tighter than gameplay: the chase shot uses a close 3/4
+// rear view, the shootout shot sits right behind Jax so faces read.
+// Title orbit sits over the beach looking west across the city (no tower
+// between camera and skyline — the old low orbit put a rooftop in the way).
+const camPos = new THREE.Vector3(1450, 140, 100);
+const camLook = new THREE.Vector3(-200, 50, -100);
 function updateCamera(dt) {
   const p = game.player;
   if (game.state === 'title') {
-    // slow orbit over the sunset city (proven composition: menu + vista)
+    // slow orbit over the beach at sunset: city skyline + sun ahead, sand below
     const t = game.time * 0.05;
-    camPos.set(1300 + Math.sin(t) * 140, 130, 300 + Math.cos(t * 0.8) * 90);
-    camLook.set(-300, 50, -150);
+    camPos.set(1450 + Math.sin(t) * 110, 140, 100 + Math.cos(t * 0.8) * 70);
+    camLook.set(-200, 50, -100);
     camera.position.lerp(camPos, 1 - Math.exp(-2 * dt));
     camera.lookAt(camLook);
-    camera.fov = lerp(camera.fov, 58, dt * 2);
+    camera.fov = lerp(camera.fov, 55, dt * 2);
     camera.updateProjectionMatrix();
     return;
   }
@@ -145,16 +161,23 @@ function updateCamera(dt) {
   if (p.inCar) {
     const c = p.inCar;
     const fx = Math.cos(c.angle), fz = -Math.sin(c.angle);
-    target = new THREE.Vector3(c.x - fx * 7.5, 2.6, c.z - fz * 7.5);
-    look = new THREE.Vector3(c.x + fx * 12, 1.2, c.z + fz * 12);
-    camera.fov = lerp(camera.fov, 62 + clamp(Math.abs(c.speed) / 50, 0, 1) * 7, dt * 3);
+    const shot = game.shotMode === 'chase';
+    const back = shot ? 5.2 : 6.5, height = shot ? 2.1 : 2.4;
+    // lateral offset in shot mode: 3/4 rear view like the rank-3 reference
+    const lat = shot ? 2.0 : 0;
+    const px = -fz, pz = fx; // perpendicular to the car's forward
+    target = new THREE.Vector3(c.x - fx * back + px * lat, height, c.z - fz * back + pz * lat);
+    look = new THREE.Vector3(c.x + fx * 11, shot ? 2.0 : 1.2, c.z + fz * 11);
+    camera.fov = lerp(camera.fov, shot ? 58 : 62 + clamp(Math.abs(c.speed) / 50, 0, 1) * 7, dt * 3);
   } else {
-    // on-foot camera pulled well back: the 3.65-unit player model still filled
-    // a third of the frame at 10.5 (night-scene check)
+    // on-foot camera: closer than the old 16u (Jax was ~21% of frame);
+    // the shootout shot goes tighter still so faces + tracers fill the frame
     const fx = Math.sin(p.angle), fz = Math.cos(p.angle);
-    target = new THREE.Vector3(p.x - fx * 16, 3.8, p.z - fz * 16);
-    look = new THREE.Vector3(p.x + fx * 12, 2.0, p.z + fz * 12);
-    camera.fov = lerp(camera.fov, 58, dt * 3);
+    const shot = game.shotMode === 'shootout';
+    const back = shot ? 8 : 13, height = shot ? 2.9 : 3.4;
+    target = new THREE.Vector3(p.x - fx * back, height, p.z - fz * back);
+    look = new THREE.Vector3(p.x + fx * 10, shot ? 1.8 : 2.0, p.z + fz * 10);
+    camera.fov = lerp(camera.fov, shot ? 54 : 58, dt * 3);
     game.cameraYaw = p.angle + Math.PI;
   }
   camera.position.lerp(target, 1 - Math.exp(-7 * dt));
@@ -357,6 +380,9 @@ function animate() {
       // prompt text
       game.promptText = stealPrompt(game) || (garageNear(game) ? '[G] Benny\'s Garage' : '');
       // muzzle flash sits at the gun, offset along the last shot direction
+      // (smaller in the close shootout shot, or it would wash the frame)
+      const fs = game.shotMode === 'shootout' ? 2.0 : 3.5;
+      flash.scale.set(fs, fs, 1);
       flash.material.opacity = game.combat.flashT > 0 ? 0.95 : 0;
       if (game.combat.flashT > 0) {
         const p = game.player;

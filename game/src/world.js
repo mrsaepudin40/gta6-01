@@ -71,14 +71,59 @@ function sunTexture() {
   g.fillStyle = grad; g.fillRect(0, 0, 256, 256);
   // granulation: darker speckles in the core so the disc is not flat
   const rng = mulberry32(7);
-  for (let i = 0; i < 90; i++) {
+  for (let i = 0; i < 220; i++) {
     const a = rng() * Math.PI * 2, r = Math.sqrt(rng()) * 26;
     g.fillStyle = `rgba(255,180,80,${0.12 + rng() * 0.25})`;
     g.beginPath(); g.arc(128 + Math.cos(a) * r, 128 + Math.sin(a) * r, 1 + rng() * 2.2, 0, Math.PI * 2); g.fill();
   }
+  // a few larger soft sunspots for surface texture
+  for (let i = 0; i < 4; i++) {
+    const a = rng() * Math.PI * 2, r = Math.sqrt(rng()) * 18;
+    g.fillStyle = `rgba(235,140,50,${0.18 + rng() * 0.15})`;
+    g.beginPath(); g.arc(128 + Math.cos(a) * r, 128 + Math.sin(a) * r, 4 + rng() * 3, 0, Math.PI * 2); g.fill();
+  }
   // bright rim ring
   g.strokeStyle = 'rgba(255,240,190,0.9)'; g.lineWidth = 3;
   g.beginPath(); g.arc(128, 128, 40, 0, Math.PI * 2); g.stroke();
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+}
+
+// White-hot inner core: a second, smaller layer over the disc centre.
+function sunCoreTexture() {
+  return canvasTex(256, 256, (g, w, h) => {
+    const grad = g.createRadialGradient(128, 128, 2, 128, 128, 126);
+    grad.addColorStop(0, 'rgba(255,255,250,1)');
+    grad.addColorStop(0.35, 'rgba(255,246,210,0.95)');
+    grad.addColorStop(0.6, 'rgba(255,220,140,0.4)');
+    grad.addColorStop(1, 'rgba(255,200,100,0)');
+    g.fillStyle = grad; g.fillRect(0, 0, w, h);
+  });
+}
+
+// Radial light rays: 18 soft wedges radiating from the sun, fading outward.
+function sunRaysTexture() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 512;
+  const g = c.getContext('2d');
+  const conic = g.createConicGradient(0, 256, 256);
+  for (let i = 0; i < 18; i++) {
+    const a0 = i / 18, a1 = (i + 0.5) / 18, a2 = (i + 1) / 18;
+    conic.addColorStop(a0, 'rgba(255,200,120,0)');
+    conic.addColorStop(a1, 'rgba(255,205,130,0.55)');
+    conic.addColorStop(a2, 'rgba(255,200,120,0)');
+  }
+  g.fillStyle = conic; g.fillRect(0, 0, 512, 512);
+  // radial mask: rays start just outside the disc and fade to nothing at the edge
+  const mask = g.createRadialGradient(256, 256, 40, 256, 256, 252);
+  mask.addColorStop(0, 'rgba(0,0,0,0)');
+  mask.addColorStop(0.22, 'rgba(0,0,0,0)');
+  mask.addColorStop(0.35, 'rgba(0,0,0,1)');
+  mask.addColorStop(0.85, 'rgba(0,0,0,0.6)');
+  mask.addColorStop(1, 'rgba(0,0,0,0)');
+  g.globalCompositeOperation = 'destination-in';
+  g.fillStyle = mask; g.fillRect(0, 0, 512, 512);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   return t;
@@ -471,25 +516,45 @@ export function buildWorld(scene) {
     g.add(b);
   }
 
-  // ---- sun: detailed disc + halo + flare streak + directional light with shadows ----
-  // Disc: crisp granulated core (sunTexture). Halo: huge soft additive glow.
-  // Streak: wide horizontal anamorphic flare. Together they read as a blazing
-  // late-afternoon sun, not a flat orange circle.
+  // ---- sun: detailed disc + core + layered corona + rays + flare ghosts ----
+  // Disc: crisp granulated core (sunTexture). Core: white-hot inner layer.
+  // Halo: huge soft additive glow. Rays: 18 radial beams. Ghosts: small
+  // lens-flare circles strung between the sun and the camera (positions
+  // updated every frame in main.js updateSun).
   const sunSpr = new THREE.Sprite(new THREE.SpriteMaterial({ map: sunTexture(), transparent: true, opacity: 0.98, depthWrite: false, fog: false }));
   sunSpr.scale.set(430, 430, 1);
   sunSpr.position.set(-1500, 190, -350);
   scene.add(sunSpr);
   world.sunSprite = sunSpr;
+  const sunCore = new THREE.Sprite(new THREE.SpriteMaterial({ map: sunCoreTexture(), transparent: true, opacity: 0.95, depthWrite: false, fog: false, blending: THREE.AdditiveBlending }));
+  sunCore.scale.set(300, 300, 1);
+  sunCore.position.copy(sunSpr.position);
+  scene.add(sunCore);
+  world.sunCore = sunCore;
   const sunHalo = new THREE.Sprite(new THREE.SpriteMaterial({ map: haloTexture(), transparent: true, opacity: 0.55, depthWrite: false, fog: false, blending: THREE.AdditiveBlending }));
   sunHalo.scale.set(1500, 1500, 1);
   sunHalo.position.copy(sunSpr.position);
   scene.add(sunHalo);
   world.sunHalo = sunHalo;
+  const sunRays = new THREE.Sprite(new THREE.SpriteMaterial({ map: sunRaysTexture(), transparent: true, opacity: 0.32, depthWrite: false, fog: false, blending: THREE.AdditiveBlending }));
+  sunRays.scale.set(2400, 2400, 1);
+  sunRays.position.copy(sunSpr.position);
+  scene.add(sunRays);
+  world.sunRays = sunRays;
   const sunStreak = new THREE.Sprite(new THREE.SpriteMaterial({ map: streakTexture(), transparent: true, opacity: 0.4, depthWrite: false, fog: false, blending: THREE.AdditiveBlending }));
   sunStreak.scale.set(1700, 130, 1);
   sunStreak.position.copy(sunSpr.position);
   scene.add(sunStreak);
   world.sunStreak = sunStreak;
+  // lens-flare ghosts (t = fraction along sun->camera, sizes in world units)
+  world.sunGhosts = [];
+  for (const [t, size, op, col] of [[0.3, 80, 0.28, 0xffd9a0], [0.45, 52, 0.22, 0xffb36b], [0.6, 34, 0.18, 0x9ad0ff], [0.78, 110, 0.12, 0xff8a5c]]) {
+    const spr = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTexture(), color: col, transparent: true, opacity: op, depthWrite: false, fog: false, blending: THREE.AdditiveBlending }));
+    spr.scale.set(size, size, 1);
+    spr.position.copy(sunSpr.position);
+    scene.add(spr);
+    world.sunGhosts.push({ spr, t, baseOp: op });
+  }
 
   const sun = new THREE.DirectionalLight(0xffb36b, 3.0);
   sun.castShadow = true;
@@ -547,7 +612,10 @@ export function setNight(world, f) {
   for (const m of world.facadeMats) m.emissiveIntensity = 0.32 + f * 0.95;
   for (const m of world.lampGlows) m.opacity = 0.42 + f * 0.5;
   world.sunSprite.material.opacity = 0.98 - f * 0.95;
+  if (world.sunCore) world.sunCore.material.opacity = 0.95 * (1 - f);
   if (world.sunHalo) world.sunHalo.material.opacity = 0.55 * (1 - f);
+  if (world.sunRays) world.sunRays.material.opacity = 0.32 * (1 - f);
   if (world.sunStreak) world.sunStreak.material.opacity = 0.4 * (1 - f);
+  if (world.sunGhosts) for (const g of world.sunGhosts) g.spr.material.opacity = g.baseOp * (1 - f);
   if (world.skyDome) world.skyDome.material.color.copy(DAY_SKY).lerp(NIGHT_SKY, f);
 }

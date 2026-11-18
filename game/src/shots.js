@@ -66,12 +66,16 @@ export function applyShot(game, name, seed) {
     startMission(game, 7); // Showdown
     game.mission.stage = 1;
     addHeat(game, 60); // 3 stars
-    // Rico's crew on the road ahead: 2 close enough to return fire (<55u)
+    // Rico's crew on the road ahead, CLOSE (14–40u from Jax) so their faces,
+    // caps and return-fire tracers read at the new 8u camera. All within 55u,
+    // so at least two return fire. Lateral offsets are DELIBERATE (±11–14u):
+    // dead-ahead targets make the tracers edge-on to the camera (invisible);
+    // offset targets give diagonal fire lines across the frame.
     const defs = [
-      { x: 95, z: 394, hp: 100, rico: false },
-      { x: 105, z: 408, hp: 100, rico: false },
-      { x: 130, z: 396, hp: 100, rico: false },
-      { x: 150, z: 406, hp: 220, rico: true },
+      { x: 76, z: 388, hp: 100, rico: false },
+      { x: 84, z: 414, hp: 100, rico: false },
+      { x: 92, z: 389, hp: 100, rico: false },
+      { x: 100, z: 413, hp: 220, rico: true },
     ];
     for (const d of defs) {
       const mesh = buildCrewMember(d.rico);
@@ -101,13 +105,14 @@ export function applyShot(game, name, seed) {
       game.shotPeds.push(ped);
     }
     // parked cars as cover near the crew (off the direct fire line)
-    for (const [cx, cz, col] of [[95, 416, 0xf2f2f2], [145, 388, 0xd23c3c]]) {
+    for (const [cx, cz, col] of [[125, 418, 0xf2f2f2], [140, 386, 0xd23c3c]]) {
       const c = makeCar(cx, cz, Math.PI / 2, false, col);
       game.scene.add(c.mesh);
     }
-    // 2 cop cars + heli, pinned by updateShot so they never ram Jax
+    // 2 cop cars + heli, pinned by updateShot so they never ram Jax.
+    // Close enough to read in frame (~48u from Jax, not 105–135u).
     game.police.stars = 3;
-    for (const [cx, cz] of [[195, 390], [165, 414]]) {
+    for (const [cx, cz] of [[108, 386], [106, 418]]) {
       const mesh = buildCopCar();
       mesh.position.set(cx, 0, cz);
       mesh.rotation.y = Math.PI / 2;
@@ -118,7 +123,7 @@ export function applyShot(game, name, seed) {
       game.police.heli = buildHeli();
       game.scene.add(game.police.heli);
     }
-    game.police.heli.position.set(130, 30, 400);
+    game.police.heli.position.set(115, 17, 400);
     game.state = 'playing';
   } else if (name === 'map') {
     setNight(game.world, 0);
@@ -164,8 +169,9 @@ export function updateShot(game, dt) {
     }
     game.mission.timer = Math.max(1, game.mission.timer - dt);
     // keep the helicopter ahead-left in frame (updatePolice would hover it behind the camera)
+    // lower + closer than before: the tighter chase FOV would cut it off at the old spot
     const h = game.police.heli;
-    if (h) h.position.set(car.x - 55, 34, car.z + 26);
+    if (h) h.position.set(car.x - 44, 26, car.z + 22);
   } else if (game.shotMode === 'shootout' && game.state === 'playing') {
     // looped fire at the nearest living enemy
     game.combat.fireT -= dt;
@@ -180,7 +186,7 @@ export function updateShot(game, dt) {
       }
     }
     // pin the cop cars + heli so the formation never breaks up
-    const pin = [[195, 390], [165, 414]];
+    const pin = [[108, 386], [106, 418]];
     game.police.copCars.forEach((c, i) => {
       const [cx, cz] = pin[i % pin.length];
       c.x = cx; c.z = cz;
@@ -188,7 +194,7 @@ export function updateShot(game, dt) {
       c.mesh.rotation.y = Math.PI / 2;
     });
     const h = game.police.heli;
-    if (h) h.position.set(130, 30, 400);
+    if (h) h.position.set(115, 17, 400);
     // keep the market crowd scared and inside the frame (fear pose = arms up)
     game._scareT = (game._scareT || 0) - dt;
     if (game._scareT <= 0 && game.shotPeds) {
