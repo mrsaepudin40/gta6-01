@@ -59,6 +59,15 @@ export function updatePlayerCar(game, dt, input) {
   audio.engineSet(clamp(Math.abs(car.speed) / max, 0, 1));
   // car damage smoke
   if (car.hp < 45 && game.effects) game.effects.smoke(car.x, car.z);
+  // tire dust + smoke when speeding (rear wheels)
+  if (game.effects && Math.abs(car.speed) > 25) {
+    game._dustT = (game._dustT || 0) - dt;
+    if (game._dustT <= 0) {
+      game._dustT = 0.14;
+      const bx = car.x - Math.cos(car.angle) * 2.2, bz = car.z + Math.sin(car.angle) * 2.2;
+      game.effects.smoke(bx, bz);
+    }
+  }
 }
 
 export function spawnTraffic(game) {

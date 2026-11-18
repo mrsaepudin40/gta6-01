@@ -2,7 +2,7 @@
 // police helicopter at 3+ stars. BUSTED when caught slow and close.
 import * as THREE from 'three';
 import { CFG } from './config.js';
-import { buildCopCar, buildHeli, buildPed } from './entities.js';
+import { buildCopCar, buildHeli, buildCopPed, animatePed } from './entities.js';
 import { dist2d, clamp } from './random.js';
 import { audio } from './audio.js';
 
@@ -33,7 +33,7 @@ function spawnFootCop(game) {
   const p = game.player;
   const px = p.inCar ? p.inCar.x : p.x;
   const pz = p.inCar ? p.inCar.z : p.z;
-  const mesh = buildPed(0x2248c8);
+  const mesh = buildCopPed();
   const a = Math.random() * Math.PI * 2;
   const cop = { mesh, x: px + Math.cos(a) * 40, z: pz + Math.sin(a) * 40, hp: 60 };
   mesh.position.set(cop.x, 0, cop.z);
@@ -107,6 +107,7 @@ export function updatePolice(game, dt) {
       cop.z -= Math.sin(a) * 3.2 * dt;
       cop.mesh.position.set(cop.x, 0, cop.z);
       cop.mesh.rotation.y = Math.atan2(px - cop.x, pz - cop.z);
+      animatePed(cop.mesh, dt, true, 'walk');
     } else if (!p.inCar) {
       p.hp -= 6 * dt;
       if (p.hp <= 0) game.state = 'wasted';

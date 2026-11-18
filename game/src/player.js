@@ -1,12 +1,12 @@
 // On-foot player: movement, camera-relative heading, enter/exit/steal cars.
 import * as THREE from 'three';
 import { CFG } from './config.js';
-import { buildPed } from './entities.js';
+import { buildJax, animatePed } from './entities.js';
 import { dist2d, clamp } from './random.js';
 import { audio } from './audio.js';
 
 export function makePlayer(game) {
-  const mesh = buildPed(0x37d67a);
+  const mesh = buildJax();
   mesh.position.set(0, 0, 100);
   game.scene.add(mesh);
   return {
@@ -41,8 +41,8 @@ export function updatePlayer(game, dt, input) {
   }
   p.mesh.position.set(p.x, 0, p.z);
   p.mesh.rotation.y = p.angle;
-  // simple walk bob
-  p.mesh.position.y = len > 0 ? Math.abs(Math.sin(game.time * 10)) * 0.12 : 0;
+  // articulated walk: legs + arms swing; aim pose while firing
+  animatePed(p.mesh, dt, len > 0, game.combat && game.combat.flashT > 0 ? 'aim' : 'walk');
 }
 
 function nearestCar(game, maxD) {

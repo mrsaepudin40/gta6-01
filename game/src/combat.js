@@ -2,7 +2,7 @@
 // Rico's showdown crew. Tracers are thin lines that read on dark asphalt.
 import * as THREE from 'three';
 import { CFG } from './config.js';
-import { buildPed } from './entities.js';
+import { buildCrewMember, animatePed } from './entities.js';
 import { dist2d } from './random.js';
 import { audio } from './audio.js';
 import { addHeat } from './police.js';
@@ -103,7 +103,7 @@ export function spawnShowdownCrew(game) {
     { x: -1410, z: -800, hp: 220, rico: true },
   ];
   for (const d of defs) {
-    const mesh = buildPed(d.rico ? 0xe05a5a : 0x8a5a3a);
+    const mesh = buildCrewMember(d.rico);
     mesh.position.set(d.x, 0, d.z);
     game.scene.add(mesh);
     game.enemies.push({ mesh, x: d.x, z: d.z, hp: d.hp, dead: false, rico: d.rico, fireT: 0.6 + Math.random() });
@@ -139,16 +139,19 @@ export function updateCombat(game, dt) {
       e.mesh.position.set(e.x, 0, e.z);
       e.mesh.rotation.y = Math.atan2(px - e.x, pz - e.z);
     }
+    // articulated: walk toward the player, aim both arms when in range
+    animatePed(e.mesh, dt, d > 6, d < 55 ? 'aim' : 'walk');
     e.fireT -= dt;
     if (e.fireT <= 0 && d < 55) { enemyShot(game, e); e.fireT = 0.9 + Math.random() * 0.6; }
   }
-  // peds flee gunfire
+  // peds flee gunfire — arms thrown up, legs pumping
   for (const ped of game.peds) {
     if (ped.flee > 0) {
       ped.flee -= dt;
       ped.x += ped.fx * 5 * dt;
       ped.z += ped.fz * 5 * dt;
       ped.mesh.position.set(ped.x, 0, ped.z);
+      animatePed(ped.mesh, dt, true, 'fear');
     }
   }
 }

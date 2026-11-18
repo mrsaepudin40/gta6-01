@@ -107,6 +107,22 @@ export const DISTRICTS = [
 ];
 
 export const RADIO = ['SOLMAR FM 98.4', 'BAY FM 101.2', 'SUNSET 87.9'];
+export const RADIO_TRACKS = [
+  'Sunset Static — The Bay Riders',
+  'Neon Tide — Marina Lights',
+  'Golden Hour — Jax & The Palms',
+];
+
+// stage totals per mission (for the mission stage bar)
+export const STAGE_TOTALS = [2, 2, 1, 2, 1, 3, 1, 2];
+
+export const REP_RANKS = [
+  'NOBODY', 'SMALL TIME', 'STREET KID', 'KNOWN DRIVER',
+  'BAY HUSTLER', 'BIG SHOT', 'KINGPIN', 'LEGEND', 'KING OF THE BAY',
+];
+
+// Solmar Bay Police unit callsigns (own names, not copied from any entry)
+export const COP_UNITS = ['SBP-11', 'SBP-24', 'SBP-37', 'SBP-52', 'AIR-1'];
 
 export const GARAGE_UPGRADES = [
   { id: 'engine', name: 'Engine Mk II', desc: '+12% top speed & acceleration per level', prices: [500, 800, 1200], max: 3 },

@@ -14,7 +14,7 @@ import { initInput, pressed, consumeClick, mouse } from './input.js';
 import { writeSave, readSave } from './save.js';
 import { initHud, updateHud, openMap, closeMap, isMapOpen, openPhone, closePhone, isPhoneOpen, showTitle, hideTitle, showCenter, hideCenter } from './hud.js';
 import { applyShot, updateShot } from './shots.js';
-import { buildPed } from './entities.js';
+import { buildJax, buildPed, animatePed } from './entities.js';
 import { mulberry32, range, pick, clamp, lerp } from './random.js';
 
 const canvas = document.getElementById('game-canvas');
@@ -114,6 +114,7 @@ const camLook = new THREE.Vector3(-300, 50, -150);
 function updateCamera(dt) {
   const p = game.player;
   if (game.state === 'title') {
+    // slow orbit over the sunset city (proven composition: menu + vista)
     const t = game.time * 0.05;
     camPos.set(1300 + Math.sin(t) * 140, 130, 300 + Math.cos(t * 0.8) * 90);
     camLook.set(-300, 50, -150);
@@ -319,10 +320,10 @@ function animate() {
       updateMissions(game, dt);
       updateMissionQueue(game, dt);
       updateShot(game, dt);
-      // peds wander / flee
+      // peds wander / flee (articulated walk; beachgoers idle)
       for (const ped of game.peds) {
         if (ped.flee > 0) continue; // handled in combat update
-        if (ped.beach) continue;
+        if (ped.beach) { animatePed(ped.mesh, dt, false, 'idle'); continue; }
         if (ped.horizontal) {
           ped.x += ped.dir * ped.speed * dt;
           if (ped.x > 1450) ped.dir = -1;
@@ -334,6 +335,7 @@ function animate() {
         }
         ped.mesh.position.set(ped.x, 0, ped.z);
         ped.mesh.rotation.y = ped.horizontal ? (ped.dir > 0 ? Math.PI / 2 : -Math.PI / 2) : (ped.dir > 0 ? 0 : Math.PI);
+        animatePed(ped.mesh, dt, true, 'walk');
       }
       // prompt text
       game.promptText = stealPrompt(game) || (garageNear(game) ? '[G] Benny\'s Garage' : '');

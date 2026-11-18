@@ -81,6 +81,37 @@ function frondTexture() {
   });
 }
 
+// Sunset sky dome: pink-purple top fading to orange at the horizon.
+// The dome (not the flat scene background) is what the camera actually sees.
+function skyTexture() {
+  return canvasTex(16, 512, (g, w, h) => {
+    const grad = g.createLinearGradient(0, 0, 0, h);
+    grad.addColorStop(0.0, '#7a4fd0'); // violet zenith
+    grad.addColorStop(0.35, '#c65f9e'); // pink-purple
+    grad.addColorStop(0.6, '#ff7a6e'); // coral
+    grad.addColorStop(0.78, '#ffb36b'); // orange horizon
+    grad.addColorStop(1.0, '#ffd9a0'); // warm haze
+    g.fillStyle = grad; g.fillRect(0, 0, w, h);
+  });
+}
+
+function stripeTexture(c1, c2) {
+  return canvasTex(128, 64, (g, w, h) => {
+    for (let i = 0; i < 8; i++) { g.fillStyle = i % 2 ? c1 : c2; g.fillRect(i * 16, 0, 16, h); }
+  });
+}
+
+function shopTexture(text, color) {
+  return canvasTex(512, 128, (g, w, h) => {
+    g.fillStyle = 'rgba(16,12,18,0.92)'; g.fillRect(0, 0, w, h);
+    g.strokeStyle = color; g.lineWidth = 6; g.strokeRect(4, 4, w - 8, h - 8);
+    g.font = 'bold 52px Arial, sans-serif';
+    g.textAlign = 'center'; g.textBaseline = 'middle';
+    g.fillStyle = color;
+    g.fillText(text, w / 2, h / 2 + 2);
+  });
+}
+
 const ROAD_X = [-1200, -800, -400, 0, 400, 800, 1200];
 const ROAD_Z = [-800, -400, 0, 400, 800];
 
@@ -118,6 +149,16 @@ export function buildWorld(scene) {
     new THREE.MeshPhongMaterial({ color: PAL.water, shininess: 140, specular: 0x99ddff, transparent: true, opacity: 0.96 }));
   sea.rotation.x = -Math.PI / 2; sea.position.set(2300, 0.4, 0);
   g.add(sea);
+
+  // ---- sunset sky dome (gradient, follows nothing — radius covers the map) ----
+  {
+    const dome = new THREE.Mesh(
+      new THREE.SphereGeometry(5800, 24, 16),
+      new THREE.MeshBasicMaterial({ map: skyTexture(), side: THREE.BackSide, fog: false }));
+    dome.position.set(0, 0, 0);
+    scene.add(dome);
+    world.skyDome = dome;
+  }
 
   // ---- roads: sidewalk base + shiny asphalt + markings + zebra ----
   // matte asphalt: Phong specular painted a giant sun-glint wedge on the road
@@ -164,12 +205,16 @@ export function buildWorld(scene) {
     }
   }
 
-  // ---- buildings with lit-window facades ----
+  // ---- buildings with lit-window facades (pastel per district) ----
   const facadeTexs = [
-    facadeTexture('#8a5a4a', 0.35, rng),
-    facadeTexture('#5a6a7a', 0.4, rng),
-    facadeTexture('#a8763e', 0.3, rng),
-    facadeTexture('#4a6a5a', 0.45, rng),
+    facadeTexture('#e89bb0', 0.35, rng), // rose pink
+    facadeTexture('#7ec8e3', 0.4, rng), // sky blue
+    facadeTexture('#f2c14e', 0.3, rng), // amber
+    facadeTexture('#a8d8a8', 0.45, rng), // mint
+    facadeTexture('#c9a0dc', 0.4, rng), // lavender
+    facadeTexture('#e88f6a', 0.3, rng), // coral
+    facadeTexture('#8a5a4a', 0.35, rng), // brick
+    facadeTexture('#5a6a7a', 0.4, rng), // slate
   ];
   const roofMat = new THREE.MeshStandardMaterial({ color: PAL.roof, roughness: 0.9 });
   function addBuilding(x, z, w, d, h, texIdx) {
@@ -252,6 +297,53 @@ export function buildWorld(scene) {
   neonSign('CLUB SOLMAR', '#ff5fa2', 120, 20, -360, Math.PI, 46);
   neonSign('HOTEL MARINA', '#54e0ff', 1150, 26, -520, Math.PI / 2, 48);
   neonSign('BAR · SOLMAR', '#7dff8a', -420, 14, 360, Math.PI, 34);
+  // ---- readable storefront signs (Solmar Bay's own shops) ----
+  function shopSign(text, color, x, y, z, ry, w = 40) {
+    const tex = shopTexture(text, color);
+    const p = new THREE.Mesh(new THREE.PlaneGeometry(w, w / 4),
+      new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.DoubleSide }));
+    p.position.set(x, y, z); p.rotation.y = ry; g.add(p);
+  }
+  shopSign('SUNSET TACOS', '#ffd23f', 220, 10, -360, Math.PI);
+  shopSign('PIER PIZZA', '#ff5f6d', -200, 10, 440, 0);
+  shopSign('BAY BAKERY', '#7dff8a', 620, 10, 360, Math.PI);
+  shopSign('SOLMAR SURF', '#54e0ff', 1180, 10, -760, Math.PI / 2);
+  shopSign('DOCK CAFE', '#ffb36b', -1180, 10, -360, Math.PI);
+  shopSign('MARINA MARKET', '#c9a0dc', 420, 10, -440, 0);
+  shopSign('PALM GROCER', '#a8d8a8', -620, 10, 840, Math.PI);
+  shopSign('BEACH BAR', '#ff9a3c', 1180, 10, 440, Math.PI / 2);
+  // ---- billboard over the beach road (faces the westbound chase camera) ----
+  const poleMat = new THREE.MeshStandardMaterial({ color: 0x2a2a30, roughness: 0.6, metalness: 0.5 });
+  {
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.2, 26, 8), poleMat);
+    pole.position.set(1250, 13, -70); g.add(pole);
+    const bb = new THREE.Mesh(new THREE.PlaneGeometry(64, 20),
+      new THREE.MeshBasicMaterial({ map: shopTexture('SOLMAR BAY', '#ffd23f'), transparent: true, side: THREE.DoubleSide }));
+    bb.position.set(1250, 32, -70); bb.rotation.y = Math.PI / 2; g.add(bb);
+  }
+  // ---- market stalls with striped awnings (downtown, z=400 road) ----
+  {
+    const stallCols = [['#ff5f6d', '#f2e8c8'], ['#54e0ff', '#f2e8c8'], ['#ffd23f', '#e05a5a']];
+    for (let i = 0; i < 3; i++) {
+      const sx = 180 + i * 130, sz = 470;
+      const counter = new THREE.Mesh(new THREE.BoxGeometry(22, 6, 10),
+        new THREE.MeshStandardMaterial({ color: 0x8a5a3a, roughness: 0.9 }));
+      counter.position.set(sx, 3, sz); counter.castShadow = true; g.add(counter);
+      const awn = new THREE.Mesh(new THREE.PlaneGeometry(26, 12),
+        new THREE.MeshStandardMaterial({ map: stripeTexture(stallCols[i][0], stallCols[i][1]), roughness: 0.8, side: THREE.DoubleSide }));
+      awn.position.set(sx, 12, sz); awn.rotation.x = -Math.PI / 2 + 0.35; awn.castShadow = true; g.add(awn);
+      for (const px of [-11, 11]) {
+        const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.35, 10, 6), poleMat);
+        pole.position.set(sx + px, 5, sz + 4); g.add(pole);
+      }
+      // fruit crates on the counter
+      for (let j = 0; j < 3; j++) {
+        const crate = new THREE.Mesh(new THREE.BoxGeometry(4, 2.4, 4),
+          new THREE.MeshStandardMaterial({ color: [0xff8a3c, 0x7dff8a, 0xff5f6d][j], roughness: 0.8 }));
+        crate.position.set(sx - 6 + j * 6, 7.2, sz); g.add(crate);
+      }
+    }
+  }
   // garage building (orange, distinct)
   const gar = new THREE.Mesh(new THREE.BoxGeometry(120, 26, 80),
     new THREE.MeshStandardMaterial({ color: 0xd96a2e, roughness: 0.8 }));
@@ -377,4 +469,5 @@ export function setNight(world, f) {
   for (const m of world.facadeMats) m.emissiveIntensity = 0.18 + f * 1.05;
   for (const m of world.lampGlows) m.opacity = 0.25 + f * 0.6;
   world.sunSprite.material.opacity = 0.95 - f * 0.9;
+  if (world.skyDome) world.skyDome.material.color.setScalar(1 - f * 0.72);
 }

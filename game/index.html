@@ -16,6 +16,18 @@
   #chapter-panel { position: absolute; top: 14px; left: 14px; padding: 10px 14px; border-left: 4px solid #ffd23f; max-width: 430px; }
   #chapter-title { font-size: 15px; font-weight: 900; letter-spacing: 1px; color: #ffd23f; }
   #chapter-obj { font-size: 13px; line-height: 1.35; margin-top: 4px; color: #eef2ff; }
+  #chapter-stage { height: 7px; background: rgba(255,255,255,0.18); border-radius: 4px; margin-top: 8px; overflow: hidden; }
+  #chapter-stage-fill { height: 100%; background: linear-gradient(90deg, #37d67a, #ffd23f); border-radius: 4px; width: 0%; }
+  #chapter-next { font-size: 12px; margin-top: 5px; color: #ffd9a0; }
+  #chapter-next b { color: #fff; background: #ff8a1e; padding: 1px 6px; border-radius: 4px; font-size: 10px; letter-spacing: 1px; margin-right: 6px; }
+  #police-panel { position: absolute; top: 150px; left: 14px; padding: 9px 12px; width: 300px; }
+  .police-title { font-size: 11px; font-weight: 900; letter-spacing: 2px; color: #ff8a8a; margin-bottom: 5px; }
+  .police-row { display: flex; justify-content: space-between; font-size: 12px; padding: 2px 0; color: #dfe8ff; }
+  .police-row b { color: #fff; }
+  .police-row .st { font-weight: 900; letter-spacing: 1px; }
+  .police-row .st.ram { color: #ff5f6d; }
+  .police-row .st.spot { color: #ffd23f; }
+  .police-row .st.purs { color: #9fd8f2; }
   #money-panel { position: absolute; top: 14px; right: 14px; padding: 8px 14px; text-align: right; }
   #clock-day { font-size: 12px; color: #ffd9a0; letter-spacing: 1px; }
   #money { font-size: 26px; font-weight: 900; color: #7dff8a; }
@@ -23,11 +35,18 @@
   .star { color: #555; }
   .star.on { color: #ffd23f; text-shadow: 0 0 8px #ffb300; }
   #wanted-status { font-size: 12px; font-weight: 800; letter-spacing: 2px; color: #ff5f6d; }
-  #weapon-panel { position: absolute; top: 128px; right: 14px; padding: 8px 12px; display: flex; align-items: center; gap: 10px; }
-  #weapon-icon { font-size: 22px; }
-  #weapon-name { font-size: 11px; color: #ffd9a0; letter-spacing: 1px; }
-  #weapon-ammo { font-size: 20px; font-weight: 900; }
-  #health-panel { position: absolute; top: 196px; right: 14px; padding: 8px 12px; width: 170px; }
+  #weapon-slots { position: absolute; top: 128px; right: 14px; display: flex; gap: 6px; }
+  .wslot { width: 62px; padding: 6px 2px 5px; text-align: center; background: rgba(12,14,22,0.72); border-radius: 8px; border: 2px solid transparent; color: #fff; }
+  .wslot.active { border-color: #ffd23f; background: rgba(255,180,60,0.25); }
+  .wslot.locked { opacity: 0.45; }
+  .wslot-key { font-size: 9px; color: #ffd9a0; font-weight: 900; }
+  .wslot-icon { font-size: 20px; line-height: 1.2; }
+  .wslot-ammo { font-size: 11px; font-weight: 900; }
+  #health-panel { position: absolute; top: 206px; right: 14px; padding: 8px 12px; width: 170px; }
+  #rep-panel { position: absolute; top: 282px; right: 14px; padding: 8px 12px; width: 170px; }
+  #rep-rank { margin-left: auto; color: #c9a0dc; font-size: 11px; }
+  #rep-fill { background: linear-gradient(90deg, #c9a0dc, #ff5fa2); }
+  #rep-progress { font-size: 10px; color: #c9d4e8; margin-top: 3px; text-align: right; }
   .hp-row { display: flex; align-items: center; gap: 6px; margin: 3px 0; font-size: 11px; font-weight: 800; }
   .hp-bar { flex: 1; height: 9px; background: rgba(255,255,255,0.18); border-radius: 5px; overflow: hidden; }
   .hp-fill { height: 100%; background: #37d67a; border-radius: 5px; }
@@ -35,13 +54,17 @@
   #minimap-wrap { position: absolute; left: 14px; bottom: 14px; }
   #minimap { width: 230px; height: 230px; border-radius: 50%; border: 4px solid rgba(255,255,255,0.85); box-shadow: 0 4px 24px rgba(0,0,0,0.5); }
   #minimap-district { position: absolute; top: -8px; left: 50%; transform: translateX(-50%); background: #ffd23f; color: #222; font-size: 11px; font-weight: 900; padding: 2px 10px; border-radius: 8px; letter-spacing: 1px; white-space: nowrap; }
-  #speedo { position: absolute; right: 16px; bottom: 16px; padding: 10px 16px; text-align: right; min-width: 170px; }
-  #speed-num { font-size: 44px; font-weight: 900; line-height: 1; }
+  #speedo { position: absolute; right: 16px; bottom: 16px; padding: 10px 16px; text-align: right; min-width: 190px; }
+  #speed-num { font-size: 56px; font-weight: 900; line-height: 1; }
   #speed-unit { font-size: 13px; color: #ffd9a0; }
   #speed-car { font-size: 12px; font-weight: 800; letter-spacing: 1px; color: #9fd8f2; }
   #speed-track { height: 6px; background: rgba(255,255,255,0.18); border-radius: 3px; margin-top: 6px; overflow: hidden; }
   #speed-fill { height: 100%; background: linear-gradient(90deg, #37d67a, #ffd23f, #ff5f6d); }
-  #radio-label { position: absolute; right: 16px; bottom: 132px; padding: 6px 12px; font-size: 13px; color: #ffd9a0; }
+  #speed-cond-row { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 10px; font-weight: 800; color: #ffd9a0; }
+  #speed-cond-row .hp-bar { flex: 1; height: 7px; background: rgba(255,255,255,0.18); border-radius: 4px; overflow: hidden; }
+  #speed-cond-fill { height: 100%; background: #54c8ff; border-radius: 4px; }
+  #radio-label { position: absolute; right: 16px; bottom: 142px; padding: 6px 12px; font-size: 13px; color: #ffd9a0; text-align: right; line-height: 1.35; }
+  #radio-track { color: #ff8ad8; font-size: 12px; }
   #hud-district { position: absolute; left: 258px; bottom: 200px; font-size: 13px; font-weight: 900; letter-spacing: 2px; color: #fff; text-shadow: 0 2px 6px rgba(0,0,0,0.7); }
   #controls-hint { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); font-size: 12px; color: rgba(255,255,255,0.75); text-shadow: 0 1px 4px rgba(0,0,0,0.8); }
   #district-banner { position: absolute; left: 50%; top: 34%; transform: translateX(-50%); text-align: center; transition: opacity 1s; }
@@ -49,7 +72,7 @@
   #district-name { font-size: 44px; font-weight: 900; letter-spacing: 4px; color: #fff; text-shadow: 0 0 18px rgba(255,180,80,0.9), 0 3px 8px rgba(0,0,0,0.7); }
   #district-blurb { font-size: 15px; color: #ffd9a0; text-shadow: 0 2px 6px rgba(0,0,0,0.8); }
   #dialog-bar { position: absolute; left: 50%; bottom: 64px; transform: translateX(-50%); display: flex; gap: 12px; align-items: center; padding: 10px 18px; max-width: 640px; }
-  #dialog-avatar { width: 42px; height: 42px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 900; font-size: 18px; color: #111; flex-shrink: 0; }
+  #dialog-avatar { width: 56px; height: 56px; border-radius: 50%; border: 2px solid #ffd23f; flex-shrink: 0; background: #222; }
   #dialog-name { font-size: 12px; font-weight: 900; color: #ffd23f; letter-spacing: 1px; }
   #dialog-text { font-size: 15px; line-height: 1.3; }
   #mission-banner { position: absolute; left: 50%; top: 44%; transform: translateX(-50%); font-size: 30px; font-weight: 900; letter-spacing: 2px; color: #ffd23f; text-shadow: 0 0 16px rgba(255,180,0,0.8), 0 3px 8px rgba(0,0,0,0.8); white-space: nowrap; }
@@ -57,10 +80,15 @@
 
   /* ---- map screen ---- */
   #map-screen { position: fixed; inset: 0; background: rgba(8, 10, 18, 0.94); z-index: 20; display: flex; flex-direction: column; padding: 18px 26px; color: #fff; }
+  #map-tabs { display: flex; gap: 10px; margin-bottom: 12px; }
+  .map-tab { padding: 10px 26px; border-radius: 8px; border: none; background: rgba(255,255,255,0.1); color: #fff; font-size: 16px; font-weight: 900; letter-spacing: 2px; cursor: pointer; }
+  .map-tab.active { background: linear-gradient(90deg, #ff5fa2, #ff8a1e); }
   #map-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; }
   #map-header h1 { font-size: 28px; letter-spacing: 2px; }
   #map-header h1 span { color: #ffd23f; }
   #map-header .hint { font-size: 13px; color: #9fb2cc; }
+  #map-complete { font-size: 22px; font-weight: 900; color: #ffd23f; }
+  #map-complete span { font-size: 12px; color: #9fb2cc; font-weight: 400; margin-left: 8px; }
   #map-body { flex: 1; display: flex; gap: 18px; min-height: 0; }
   #story-col { width: 300px; flex-shrink: 0; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; }
   #story-col h2 { font-size: 14px; letter-spacing: 2px; color: #ffd23f; }
@@ -73,11 +101,28 @@
   .story-reward { margin-left: auto; font-weight: 900; color: #7dff8a; font-size: 13px; }
   #bigmap-wrap { flex: 1; display: flex; align-items: center; justify-content: center; min-width: 0; }
   #bigmap { max-width: 100%; max-height: 100%; border-radius: 12px; border: 3px solid #ffd23f; }
-  #map-right { width: 220px; flex-shrink: 0; display: flex; flex-direction: column; gap: 14px; }
+  #map-right { width: 220px; flex-shrink: 0; display: flex; flex-direction: column; gap: 14px; overflow-y: auto; }
   #map-right h2 { font-size: 14px; letter-spacing: 2px; color: #54e0ff; }
   .legend-row { font-size: 13px; padding: 3px 0; color: #dfe8ff; }
   #map-stats { background: rgba(255,255,255,0.06); border-radius: 8px; padding: 12px; font-size: 14px; line-height: 1.7; }
   #map-stats b { color: #7dff8a; }
+  .skill-row { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 3px 0; color: #dfe8ff; }
+  .skill-row .sk-name { width: 92px; flex-shrink: 0; }
+  .skill-pips { display: flex; gap: 3px; }
+  .skill-pips i { width: 12px; height: 12px; border-radius: 3px; background: rgba(255,255,255,0.18); display: block; }
+  .skill-pips i.on { background: #54e0ff; }
+  #map-buttons { display: flex; gap: 10px; margin-top: 14px; }
+  .map-btn { flex: 1; padding: 12px 0; border-radius: 10px; border: 2px solid rgba(255,255,255,0.5); background: rgba(255,255,255,0.08); color: #fff; font-size: 16px; font-weight: 900; cursor: pointer; }
+  .map-btn:hover { border-color: #ffd23f; }
+  #map-msg { text-align: center; font-size: 13px; color: #7dff8a; margin-top: 8px; min-height: 18px; }
+  .map-view { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+  .map-view h2 { font-size: 18px; letter-spacing: 2px; color: #ffd23f; margin-bottom: 10px; }
+  .stat-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
+  .stat-cell { background: rgba(255,255,255,0.06); border-radius: 10px; padding: 16px; }
+  .stat-cell .v { font-size: 26px; font-weight: 900; color: #7dff8a; }
+  .stat-cell .k { font-size: 13px; color: #9fb2cc; margin-top: 2px; }
+  .setting-row { display: flex; justify-content: space-between; align-items: center; background: rgba(255,255,255,0.06); border-radius: 10px; padding: 14px 18px; margin-bottom: 10px; font-size: 15px; max-width: 640px; }
+  .setting-row .note { font-size: 12px; color: #9fb2cc; }
 
   /* ---- phone ---- */
   #phone { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 480px; max-width: 92vw; background: #101623; border: 3px solid #54c8ff; border-radius: 18px; z-index: 25; padding: 16px; color: #fff; box-shadow: 0 12px 48px rgba(0,0,0,0.7); }
@@ -133,6 +178,12 @@
   <div id="chapter-panel" class="panel">
     <div id="chapter-title">SOLMAR BAY · FREE ROAM</div>
     <div id="chapter-obj">Press Enter to start your first job for Mara.</div>
+    <div id="chapter-stage"><div id="chapter-stage-fill"></div></div>
+    <div id="chapter-next"></div>
+  </div>
+  <div id="police-panel" class="panel hidden">
+    <div class="police-title">SOLMAR BAY POLICE RESPONSE</div>
+    <div id="police-list"></div>
   </div>
   <div id="money-panel" class="panel">
     <div id="clock-day">DAY 1 18:52</div>
@@ -140,31 +191,47 @@
     <div id="stars"></div>
     <div id="wanted-status"></div>
   </div>
-  <div id="weapon-panel" class="panel">
-    <span id="weapon-icon">🔫</span>
-    <div><div id="weapon-name">PISTOL</div><div id="weapon-ammo">24 / 48</div></div>
+  <div id="weapon-slots">
+    <div class="wslot" id="wslot-1"><div class="wslot-key">1</div><div class="wslot-icon">✊</div><div class="wslot-ammo">∞</div></div>
+    <div class="wslot active" id="wslot-2"><div class="wslot-key">2</div><div class="wslot-icon">🔫</div><div class="wslot-ammo" id="weapon-ammo">24 / 48</div></div>
+    <div class="wslot" id="wslot-3"><div class="wslot-key">3</div><div class="wslot-icon">🔫</div><div class="wslot-ammo" id="smg-ammo">·</div></div>
+    <div class="wslot locked" id="wslot-4"><div class="wslot-key">4</div><div class="wslot-icon">💥</div><div class="wslot-ammo">🔒</div></div>
+    <div class="wslot locked" id="wslot-5"><div class="wslot-key">5</div><div class="wslot-icon">🎯</div><div class="wslot-ammo">🔒</div></div>
   </div>
   <div id="health-panel" class="panel">
     <div class="hp-row">HEALTH <div class="hp-bar"><div id="health-fill" class="hp-fill" style="width:100%"></div></div></div>
     <div class="hp-row" id="car-row">CAR <div class="hp-bar"><div id="car-fill" class="hp-fill" style="width:100%"></div></div></div>
+  </div>
+  <div id="rep-panel" class="panel">
+    <div class="hp-row">REP <span id="rep-rank">NOBODY</span></div>
+    <div class="hp-bar"><div id="rep-fill" class="hp-fill" style="width:0%"></div></div>
+    <div id="rep-progress">0 / 8 jobs</div>
   </div>
   <div id="minimap-wrap"><canvas id="minimap" width="230" height="230"></canvas><div id="minimap-district">DOWNTOWN</div></div>
   <div id="speedo" class="panel hidden">
     <div><span id="speed-num">0</span> <span id="speed-unit">KM/H</span></div>
     <div id="speed-car">SEDAN</div>
     <div id="speed-track"><div id="speed-fill" style="width:0%"></div></div>
+    <div id="speed-cond-row">CONDITION <div class="hp-bar"><div id="speed-cond-fill" style="width:100%"></div></div></div>
   </div>
-  <div id="radio-label" class="panel">♪ SOLMAR FM 98.4 · <b>C</b> change</div>
+  <div id="radio-label" class="panel">♪ SOLMAR FM 98.4 · <b>C</b> change<div id="radio-track">Sunset Static — The Bay Riders</div></div>
   <div id="hud-district">DOWNTOWN</div>
   <div id="controls-hint">W/S drive · A/D steer · E exit car · F punch · Click shoot · G garage (near Benny's) · C radio · M mute · P pause</div>
   <div id="district-banner" class="hidden"><div id="district-name">DOWNTOWN</div><div id="district-blurb"></div></div>
-  <div id="dialog-bar" class="panel hidden"><div id="dialog-avatar">M</div><div><div id="dialog-name">Mara</div><div id="dialog-text"></div></div></div>
+  <div id="dialog-bar" class="panel hidden"><canvas id="dialog-avatar" width="56" height="56"></canvas><div><div id="dialog-name">Mara</div><div id="dialog-text"></div></div></div>
   <div id="mission-banner" class="hidden"></div>
   <div id="prompt" class="hidden"></div>
 </div>
 
 <div id="map-screen" class="hidden">
-  <div id="map-header"><h1>SOLMAR BAY <span>CITY MAP</span></h1><div class="hint">Tab / M — close</div></div>
+  <div id="map-tabs">
+    <button class="map-tab active" data-mtab="map">MAP</button>
+    <button class="map-tab" data-mtab="stats">STATS</button>
+    <button class="map-tab" data-mtab="settings">SETTINGS</button>
+    <button class="map-tab" data-mtab="controls">CONTROLS</button>
+  </div>
+  <div id="map-header"><h1>SOLMAR BAY <span>CITY MAP</span></h1><div id="map-complete">0% COMPLETE<span>Story 0/8</span></div><div class="hint">Tab / M — close</div></div>
+  <div id="map-view-map" class="map-view">
   <div id="map-body">
     <div id="story-col"><h2>STORY</h2><div id="story-list"></div></div>
     <div id="bigmap-wrap"><canvas id="bigmap" width="760" height="570"></canvas></div>
@@ -174,12 +241,43 @@
         <div class="legend-row">▶ You are here</div>
         <div class="legend-row">◆ Job objective</div>
         <div class="legend-row">G Benny's Garage</div>
+        <div class="legend-row">🏥 Hospital</div>
+        <div class="legend-row">🏠 Safehouse</div>
+        <div class="legend-row">⚓ Old Docks</div>
+        <div class="legend-row">🏖 Sunset Beach</div>
         <div class="legend-row">— — Route to objective</div>
         <div class="legend-row">● Police</div>
         <div class="legend-row">H Helicopter</div>
       </div>
       <div id="map-stats"></div>
+      <h2>SKILLS</h2>
+      <div id="map-skills"></div>
     </div>
+  </div>
+  <div id="map-buttons">
+    <button class="map-btn" id="btn-resume">Resume</button>
+    <button class="map-btn" id="btn-save">Save Game</button>
+    <button class="map-btn" id="btn-quit">Quit to Title</button>
+  </div>
+  <div id="map-msg"></div>
+  </div>
+  <div id="map-view-stats" class="map-view hidden">
+    <h2>STATS — JAX MARLOWE</h2>
+    <div class="stat-grid" id="stats-grid"></div>
+  </div>
+  <div id="map-view-settings" class="map-view hidden">
+    <h2>SETTINGS</h2>
+    <div class="setting-row"><div>Sound <div class="note">Mute / unmute all audio</div></div><button class="map-btn" id="btn-mute" style="flex:0 0 120px">Mute: Off</button></div>
+    <div class="setting-row"><div>Shadows <div class="note">Real-time sun shadows, always on</div></div><span style="color:#7dff8a;font-weight:900">ON</span></div>
+    <div class="setting-row"><div>Save data <div class="note">Progress saves automatically after every job</div></div><button class="map-btn" id="btn-wipe" style="flex:0 0 120px">Erase Save</button></div>
+  </div>
+  <div id="map-view-controls" class="map-view hidden">
+    <h2>CONTROLS</h2>
+    <div class="setting-row"><div><b>WASD</b> — walk / drive</div><div><b>Mouse</b> — aim · Click shoot</div></div>
+    <div class="setting-row"><div><b>E</b> — enter / steal car</div><div><b>F</b> — punch</div></div>
+    <div class="setting-row"><div><b>Enter</b> — start job</div><div><b>G</b> — Benny's Garage</div></div>
+    <div class="setting-row"><div><b>Tab</b> — city map + jobs</div><div><b>Esc</b> — phone</div></div>
+    <div class="setting-row"><div><b>C</b> — next radio station</div><div><b>M / P</b> — mute / pause</div></div>
   </div>
 </div>
 
@@ -203,6 +301,11 @@
     <button class="menu-btn primary" id="btn-continue">▶ CONTINUE<span class="sub" id="continue-sub"></span></button>
     <button class="menu-btn" id="btn-new">▶ NEW GAME</button>
     <button class="menu-btn" id="btn-how">? HOW TO PLAY</button>
+    <button class="menu-btn" id="btn-credits">★ CREDITS</button>
+  </div>
+  <div id="credits-panel" class="panel hidden" style="position:absolute;top:40px;right:60px;padding:18px 22px;width:340px;">
+    <h2 style="color:#ffd23f;letter-spacing:2px;font-size:18px;margin-bottom:10px;">CREDITS</h2>
+    <div style="font-size:14px;line-height:1.7;">SOLMAR BAY — an original open-world crime game in 3D.<br>Built by an AI agent for make.fun.<br><br>Starring Jax Marlowe, Mara, Rico, Benny, Vera &amp; Otto.<br>Music: SOLMAR FM 98.4 · BAY FM 101.2 · SUNSET 87.9.<br><br>Runs fully offline. No Rockstar content.</div>
   </div>
   <div id="howto-panel" class="panel hidden">
     <h2>HOW TO PLAY</h2>

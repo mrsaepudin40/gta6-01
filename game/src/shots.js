@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import { setNight } from './world.js';
 import { makeCar } from './car.js';
-import { buildPed, buildCopCar, buildHeli } from './entities.js';
+import { buildCrewMember, buildCopCar, buildHeli } from './entities.js';
 import { startMission, say } from './missions.js';
 import { addHeat } from './police.js';
 import { fireShot } from './combat.js';
@@ -68,8 +68,9 @@ export function applyShot(game, name, seed) {
       { x: 72, z: -382, hp: 220, rico: true },
     ];
     for (const d of defs) {
-      const mesh = buildPed(d.rico ? 0xe05a5a : 0x2f8f7a);
+      const mesh = buildCrewMember(d.rico);
       mesh.position.set(d.x, 0, d.z);
+      mesh.rotation.y = Math.PI; // face the player (camera sees their fronts)
       game.scene.add(mesh);
       // invulnerable during the scene: tracers + return fire show, nobody dies,
       // so the Showdown can never complete into the victory screen
